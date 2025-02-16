@@ -1,4 +1,5 @@
 import tkinter as tk
+from PIL import Image, ImageTk
 from tkinter import PhotoImage, messagebox
 import psycopg2
 import os
@@ -56,6 +57,45 @@ def autofill_name(entry_id, entry_name, event=None):
     
     if event is not None and event.keysym == "Tab":
         event.widget.tk_focusNext().focus()  # Move to the next field manually
+
+
+def showPlayerEntry():
+    splash.destroy()
+    
+    #create entry screen
+    root = tk.Tk()
+    root.title("Player Entry Screen")
+    root.geometry("900x600")
+    root.configure(bg="black")
+
+    tk.Label(root, text="Player Entry Screen", fg="white", bg="black", font=("Arial", 20)).pack(pady=20)
+    tk.Button(root, text="Close", command=root.destroy, font=("Arial", 14)).pack(pady=10)
+
+    root.mainloop()
+
+#create splash screen
+splash = tk.Tk()
+splash.title("Splash Screen")
+splash.geometry("600x400")
+splash.configure(bg="black")
+
+#display logo
+logo = Image.open("logo.jpg")
+logo = logo.resize((300,200))
+logo = ImageTk.PhotoImage(logo)
+
+label = tk.Label(splash, image=logo, bg="black")
+label.pack(pady=50)
+
+splash.after(4000, showPlayerEntry)
+
+splash.mainloop()
+
+
+
+
+
+
 
 # Window control functions
 def minimize_window():
@@ -192,3 +232,8 @@ for i, (text, key) in enumerate(buttons):
 
 # Run Tkinter loop
 root.mainloop()
+
+
+
+
+
