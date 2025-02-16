@@ -62,16 +62,6 @@ def autofill_name(entry_id, entry_name, event=None):
 def showPlayerEntry():
     splash.destroy()
     
-    #create entry screen
-    root = tk.Tk()
-    root.title("Player Entry Screen")
-    root.geometry("900x600")
-    root.configure(bg="black")
-
-    tk.Label(root, text="Player Entry Screen", fg="white", bg="black", font=("Arial", 20)).pack(pady=20)
-    tk.Button(root, text="Start", command=root.destroy, font=("Arial", 14)).pack(pady=10)
-
-    root.mainloop()
 
 #create splash screen
 splash = tk.Tk()
