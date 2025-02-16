@@ -69,7 +69,7 @@ def showPlayerEntry():
     root.configure(bg="black")
 
     tk.Label(root, text="Player Entry Screen", fg="white", bg="black", font=("Arial", 20)).pack(pady=20)
-    tk.Button(root, text="Close", command=root.destroy, font=("Arial", 14)).pack(pady=10)
+    tk.Button(root, text="Start", command=root.destroy, font=("Arial", 14)).pack(pady=10)
 
     root.mainloop()
 
