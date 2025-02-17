@@ -1,6 +1,6 @@
 import tkinter as tk
 from PIL import Image, ImageTk
-from tkinter import PhotoImage, messagebox
+from tkinter import PhotoImage, messagebox, simpledialog
 import psycopg2
 import os
 from functools import partial  # Import partial to fix lambda scope issue
@@ -39,6 +39,70 @@ def get_player_codename(player_id):
     except psycopg2.Error as e:
         messagebox.showerror("Database Error", f"Error connecting to database:\n{e}")
         return None
+    
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+###         New functions for adding and updating players 
+### - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+# Add a new player to the database
+def add_new_player(player_id, codename):
+    """Insert a new player into the database."""
+    try:
+        conn = psycopg2.connect(
+            dbname=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            host=DB_HOST,
+            port=DB_PORT
+        )
+        cur = conn.cursor()
+        cur.execute("INSERT INTO players (id, codename) VALUES (%s, %s);", (player_id, codename))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return True
+    except psycopg2.Error as e:
+        print(f"Database error: {e}")
+        return False
+
+# Update an existing player's codename
+def update_player(player_id, new_codename):
+    """Update the player's codename in the database."""
+    try:
+        conn = psycopg2.connect(
+            dbname=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            host=DB_HOST,
+            port=DB_PORT
+        )
+        cur = conn.cursor()
+        cur.execute("UPDATE players SET codename = %s WHERE id = %s;", (new_codename, player_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return True
+    except psycopg2.Error as e:
+        print(f"Database error during update: {e}")
+        return False
+
+# Prompt user to update a player's codename
+def update_player_ui(event=None):
+    player_id_str = simpledialog.askstring("Update Player", "Enter the player ID to update:")
+    if player_id_str and player_id_str.isdigit():
+        player_id = int(player_id_str)
+        current_codename = get_player_codename(player_id)
+        if current_codename:
+            new_codename = simpledialog.askstring("Update Player", f"Current codename is '{current_codename}'.\nEnter new codename:")
+            if new_codename:
+                if update_player(player_id, new_codename):
+                    messagebox.showinfo("Success", "Player updated successfully!")
+                else:
+                    messagebox.showerror("Error", "Failed to update player.")
+        else:
+            messagebox.showwarning("Not Found", "Player not found. Cannot update a non-existent player.")
+    else:
+        messagebox.showwarning("Invalid Input", "Please enter a valid numeric player ID.")
 
 # Function to autofill name when ID is entered
 def autofill_name(entry_id, entry_name, event=None):
@@ -53,15 +117,31 @@ def autofill_name(entry_id, entry_name, event=None):
             entry_name.insert(0, codename)
         else:
             print("No codename found for this ID.")  # Debugging print
-            messagebox.showwarning("Player Not Found", "No player found for the entered ID.")
-    
+            # Prompt the user to add a new player
+            if messagebox.askyesno("Player Not Found", "No player found for the entered ID. Would you like to add a new player?"):
+                new_codename = simpledialog.askstring("Add New Player", "Enter codename for the new player:")
+                if new_codename:
+                    if add_new_player(int(player_id), new_codename):
+                        entry_name.delete(0, tk.END)
+                        entry_name.insert(0, new_codename)
+                        messagebox.showinfo("Player Added", "New player added successfully!")
+                    else:
+                        messagebox.showerror("Database Error", "Failed to add new player.")
     if event is not None and event.keysym == "Tab":
         event.widget.tk_focusNext().focus()  # Move to the next field manually
-
-
+        
+            
 def showPlayerEntry():
     splash.destroy()
-    
+
+    #create entry screen
+    root = tk.Tk()
+    root.title("Player Entry Screen")
+    root.geometry("900x600")
+    root.configure(bg="black")
+    tk.Label(root, text="Player Entry Screen", fg="white", bg="black", font=("Arial", 20)).pack(pady=20)
+    tk.Button(root, text="Start", command=root.destroy, font=("Arial", 14)).pack(pady=10)
+    root.mainloop()
 
 #create splash screen
 splash = tk.Tk()
@@ -79,13 +159,8 @@ label.pack(pady=50)
 
 splash.after(4000, showPlayerEntry)
 
-splash.mainloop()
-
-
-
-
-
-
+splash.mainloop()       
+                  
 
 # Window control functions
 def minimize_window():
@@ -98,16 +173,13 @@ def toggle_fullscreen():
 def close_window():
     root.destroy()
 
-# -------------------------------
-# New functions for F3, F12, and F7
-# -------------------------------
+# F3, F12, and F7 functionality
 
 def start_game(event=None):
     """F3 functionality: Ensure each team has at least one player before moving to play action screen."""
     print("F3: Starting game!")
     # Check that each team has at least one player.
-    # In our layout, red team entries are at even indices (0,2,4,...)
-    # and green team entries are at odd indices (1,3,5,...)
+    # In our layout, red team entries are at even indices (0, 2, 4, ...) and green team entries are at odd indices (1, 3, 5, ...)
     red_has_player = any(entry_id.get().strip() != "" for idx, (entry_id, _) in enumerate(player_entries) if idx % 2 == 0)
     green_has_player = any(entry_id.get().strip() != "" for idx, (entry_id, _) in enumerate(player_entries) if idx % 2 == 1)
     
@@ -134,23 +206,22 @@ def quit_game(event=None):
     print("F7: Quitting game!")
     root.destroy()
 
-# -------------------------------
 # Create main application window
 root = tk.Tk()
-root.title("Entry Terminal")
+root.title("Player Entry Terminal")
 root.geometry("900x600")
 root.attributes('-fullscreen', False)
 
-# Bind F3, F12, and F7 keys to their respective functions
+# Bind F3, F12, F7, and F4 (update) keys to their respective functions
 root.bind("<F3>", start_game)
 root.bind("<F12>", clear_fields)
 root.bind("<F7>", quit_game)
+root.bind("<F4>", update_player_ui)
 
 # Load background image
 try:
     image_path = os.path.join(os.getcwd(), "background.png")  # Ensure correct path
     bg_image = PhotoImage(file=image_path)
-
     canvas = tk.Canvas(root, width=root.winfo_screenwidth(), height=root.winfo_screenheight())
     canvas.pack(fill="both", expand=True)
     canvas.create_image(root.winfo_screenwidth() // 2, root.winfo_screenheight() // 2, image=bg_image, anchor="center")
@@ -172,6 +243,7 @@ tk.Label(green_frame, text="GREEN TEAM", bg="darkgreen", fg="white", font=("Aria
 # Create player entry fields for both teams
 player_entries = []
 for i in range(15):  # 15 Players per team
+    # Red team
     tk.Label(red_frame, text=f"{i+1}", font=("Arial", 10), bg="darkred", fg="white").grid(row=i+1, column=0, padx=5, pady=2)
     entry_red_id = tk.Entry(red_frame, width=5)
     entry_red_id.grid(row=i+1, column=1, padx=5, pady=2)
@@ -181,6 +253,7 @@ for i in range(15):  # 15 Players per team
     entry_red_id.bind("<Tab>", partial(autofill_name, entry_red_id, entry_red_name))
     player_entries.append((entry_red_id, entry_red_name))
 
+    # Green team
     tk.Label(green_frame, text=f"{i+1}", font=("Arial", 10), bg="darkgreen", fg="white").grid(row=i+1, column=0, padx=5, pady=2)
     entry_green_id = tk.Entry(green_frame, width=5)
     entry_green_id.grid(row=i+1, column=1, padx=5, pady=2)
@@ -198,6 +271,7 @@ buttons = [
     ("F1 Edit Game", "F1"),
     ("F2 Game Parameters", "F2"),
     ("F3 Start Game", "F3"),
+    ("F4 Update Player", "F4"),
     ("F5 PreEntered Games", "F5"),
     ("F7 Quit Game", "F7"),
     ("F8 View Game", "F8"),
@@ -205,9 +279,10 @@ buttons = [
     ("F12 Clear Game", "F12")
 ]
 
-# Map specific keys to our new functions
+# Map specific keys to our functions
 key_action_map = {
     "F3": start_game,
+    "F4": update_player_ui,
     "F12": clear_fields,
     "F7": quit_game
 }
@@ -222,8 +297,3 @@ for i, (text, key) in enumerate(buttons):
 
 # Run Tkinter loop
 root.mainloop()
-
-
-
-
-
