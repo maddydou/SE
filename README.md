@@ -72,9 +72,12 @@ This project provides an interface for a laser tag game, allowing users to enter
   - Opens as a new window when F3 is pressed (provided that both teams have at least one player).
   - Acts as a placeholder for further game progress functionality (to be developed by another team member).
  
-### UDP Communication:
-- **`python_udpclient.py`**: UDP client to simulate equipment code transmissions and network commands.
-- **`python_udpserver.py`**: UDP server that listens for messages and responds (simulating game state communication).
+### UDP Communication
+
+- **`python_udpclient.py`**:  
+  This file now contains the UDP client functionality. It defines the function `send_equipment_id(equip_id, server_address=("127.0.0.1", 7500))` for sending equipment IDs via UDP. A test loop is included under an `if __name__ == "__main__":` block so that when imported by the GUI code, only the function is used.
+- **`python_udpserver.py`**:  
+  A UDP server that listens for messages on port 7500 and responds (simulating game state communication).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
