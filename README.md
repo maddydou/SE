@@ -28,6 +28,7 @@
   </a>
 
 # Laser Tag Game Interface
+</div>
 
 ## About
 
@@ -35,7 +36,7 @@ This project provides an interface for a laser tag game, allowing users to enter
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-</div>
+
 
 ### Built with
 
