@@ -6,7 +6,7 @@ import os
 from functools import partial  # Fix lambda scope issues
 
 # Import our UDP client module
-from udp_client import send_equipment_id
+from python_udpclient import send_equipment_id
 
 # Database credentials
 DB_NAME = "photon"

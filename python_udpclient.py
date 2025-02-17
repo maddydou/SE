@@ -1,42 +1,44 @@
 import socket
 
+def send_equipment_id(equip_id, server_address=("127.0.0.1", 7500)):
+    """
+    Sends the given equipment id as a UDP message to the specified server address.
+    """
+    UDPClientSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    message = str(equip_id)
+    UDPClientSocket.sendto(message.encode('utf-8'), server_address)
+    UDPClientSocket.close()
 
-msgFromClient       = "Hello UDP Server"
-clientNum           = str(msgFromClient)
-bytesToSend         = str.encode(clientNum)
-serverAddressPort   = ("127.0.0.1", 7500)
-bufferSize          = 1024
+if __name__ == '__main__':
+    msgFromClient = "Hello UDP Server"
+    bytesToSend = str.encode(msgFromClient)
+    serverAddressPort = ("127.0.0.1", 7500)
+    bufferSize = 1024
 
-# Create a UDP socket at client side
-UDPClientSocket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
+    # Create a UDP socket at client side
+    UDPClientSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    
+    # Send an initial test message
+    UDPClientSocket.sendto(bytesToSend, serverAddressPort)
 
-# Send to server using created UDP socket
-UDPClientSocket.sendto(bytesToSend, serverAddressPort)
-
-running = False
-while(True):
-
-	userInput = input("Input ==> ") # todo: replace user input with equipment ids gotten from database upon entry
-	                                #       including buttons that start the program, end it, and enter a new network
-	print(userInput)
-	if userInput == "202" and not running: # start the program
-		running = True
-		msgFromClient = userInput                                                #   common block for sending information to the server
-		UDPClientSocket.sendto(msgFromClient.encode('utf-8'), serverAddressPort) #
-		print(bytesToSend)
-	elif userInput == "202" and running: # prevent running twice
-		print("Program is already running!")
-	elif userInput == "222": #code for entering a new network, ports remain constant
-		msgFromClient = userInput
-		UDPClientSocket.sendto(msgFromClient.encode('utf-8'), serverAddressPort)
-		newNetwork = input("New Network ==> ")
-		serverAddressPort = (newNetwork, 7501)
-	elif userInput == "221": # kill the program
-		msgFromClient = userInput
-		UDPClientSocket.sendto(msgFromClient.encode('utf-8'), serverAddressPort)
-		running = False
-		break
-	else: # send signal to turn on device of user input id
-		msgFromClient = userInput
-		equipAddress = (serverAddressPort[0], int(userInput))
-		UDPClientSocket.sendto(msgFromClient.encode('utf-8'), equipAddress)
+    running = False
+    while True:
+        userInput = input("Input ==> ")  # For testing purposes.
+        print(userInput)
+        if userInput == "202" and not running:
+            running = True
+            UDPClientSocket.sendto(userInput.encode('utf-8'), serverAddressPort)
+            print(bytesToSend)
+        elif userInput == "202" and running:
+            print("Program is already running!")
+        elif userInput == "222":  # Code for entering a new network.
+            UDPClientSocket.sendto(userInput.encode('utf-8'), serverAddressPort)
+            newNetwork = input("New Network ==> ")
+            serverAddressPort = (newNetwork, 7501)
+        elif userInput == "221":  # Kill the program.
+            UDPClientSocket.sendto(userInput.encode('utf-8'), serverAddressPort)
+            running = False
+            break
+        else:  # Send signal to turn on device of user input id.
+            equipAddress = (serverAddressPort[0], int(userInput))
+            UDPClientSocket.sendto(userInput.encode('utf-8'), equipAddress)
