@@ -1,4 +1,26 @@
-<!-- PROJECT LOGO -->
+
+<details>
+  <summary>Table of Contents</summary>
+  <ol>
+    <li>
+      <a href="#about">About The Project</a>
+      <ul>
+        <li><a href="#built-with">Built With</a></li>
+        <li><a href="#features">Features</a></li>
+      </ul>
+    </li>
+    <li>
+      <a href="#getting-started">Getting Started</a>
+      <ul>
+        <li><a href="#requirements">Requirements</a></li>
+        <li><a href="#installation">Installation</a></li>
+      </ul>
+    </li>
+    <li><a href="#contributors">Contributors</a></li>
+  </ol>
+</details>
+
+
 <br />
 <div align="center">
   <a href="https://github.com/maddydou/SE">
@@ -17,10 +39,9 @@ This project provides an interface for a laser tag game, allowing users to enter
 
 ### Built with
 
-![Python](https://img.shields.io/badge/python-3.9-blue)
-![Tkinter](https://img.shields.io/badge/Tkinter-8.6-green)
-![psycopg2](https://img.shields.io/badge/psycopg2-2.8.6-yellow)
-
+* ![Python](https://img.shields.io/badge/python-3.x-blue)
+* ![Tkinter](https://img.shields.io/badge/Tkinter-green)
+* ![psycopg2](https://img.shields.io/badge/psycopg2-yellow)
 
 ### Features
 
@@ -42,10 +63,38 @@ This project provides an interface for a laser tag game, allowing users to enter
 
 ## Getting Started
 
+### Requirements
+
 - **Python 3.x**
 - **Tkinter:** Usually included with Python installations.
 - **Psycopg2:** PostgreSQL adapter for Python. Install using:
   ```bash
   pip install psycopg2-binary
-  
+
+### Installation
+
+1. Clone the repo
+   ```sh
+   git clone https://github.com/maddydou/SE.git
+   ```
+2. Ensure login details in player_entry.py are correctly configured
+3. Execute the playerentry.py script:
+   ```sh
+   python playerentry.py
+   ```
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+## Contributors
+
+| Contributor      | Username      |
+| ---------------- | ------------- |
+| Adam Montano     | adam4475      |
+| Zebulun Jenkins  | zubEjankins   |
+| Madison Dou      | maddydou      |
+| Chase Haskell    | chase-haskell |
+| Joey Leder       | JoeyLeder     |
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
