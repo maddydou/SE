@@ -178,3 +178,10 @@ This project is licensed under the MIT License.
 **Repository:** [GitHub Link](https://github.com/maddydou/SE)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<br />
+<div align="center">
+  <a href="https://github.com/maddydou/SE">
+    <img src="background.png" alt="Logo">
+  </a>
+</div>
