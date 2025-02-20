@@ -1,0 +1,19 @@
+php->
+Pillow
+psycopg2-binary
+pygame
+python-vlc
+
+bash->
+pip install Pillow
+pip install psycopg2-binary
+pip install pygame
+pip install python-vlc
+
+
+Tkinter is typically included with Python installations, so it isn’t listed here.
+
+For VLC support, make sure that the VLC media player (and its libraries) is installed on your system. On Ubuntu, for example, you might run:
+
+bash->
+sudo apt-get update && sudo apt-get install vlc libvlc-dev
