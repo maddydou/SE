@@ -5,6 +5,9 @@ import psycopg2
 import os
 from functools import partial  # Fix lambda scope issues
 import pygame  # For music playback
+import vlc     # For video playback
+
+instance = vlc.Instance(["--no-xlib", "--quiet", "--quiet-synchro", "--no-video-title-show"])
 
 # Import our UDP client module
 from python_udpclient import send_equipment_id
@@ -48,12 +51,12 @@ def sound_askstring(title, prompt):
         print("Error playing button sound:", e)
     return simpledialog.askstring(title, prompt)
 
-def sound_askyesno(title, prompt):
+def sound_askyesno(title, prompt, parent=None):
     try:
         button_channel.play(button_sound)
     except Exception as e:
         print("Error playing button sound:", e)
-    return messagebox.askyesno(title, prompt)
+    return messagebox.askyesno(title, prompt, parent=parent)
 
 def sound_showinfo(title, message):
     try:
@@ -283,6 +286,99 @@ def view_all_players(event=None):
         text_area.insert(tk.END, "No players found in the database.")
     text_area.config(state=tk.DISABLED)
 
+# --- Tutorial Functions ---
+@with_sound
+def play_tutorial(event=None):
+    """F1: Fade out background music, display countdown and then play tutorial.mp4."""
+    # Fade out background music over 3 seconds
+    pygame.mixer.music.fadeout(3000)
+    
+    # Create a countdown window and disable its close button
+    countdown_win = tk.Toplevel()
+    countdown_win.title("Tutorial Loading")
+    countdown_win.protocol("WM_DELETE_WINDOW", lambda: None)  # Disables the close (X) button
+
+    countdown_label = tk.Label(countdown_win, text="Tutorial loading in 3...", font=("Arial", 20))
+    countdown_label.pack(padx=20, pady=20)
+    countdown_time = 3
+    def update_countdown():
+        nonlocal countdown_time
+        if countdown_time > 0:
+            countdown_label.config(text=f"Tutorial loading in {countdown_time}...")
+            countdown_time -= 1
+            countdown_win.after(1000, update_countdown)
+        else:
+            countdown_win.destroy()
+            launch_tutorial()
+    update_countdown()
+
+
+def launch_tutorial():
+    """Launch the tutorial video using VLC in a new window."""
+    video_win = tk.Toplevel()
+    video_win.title("Tutorial")
+    # Set the window size
+    desired_width = 800
+    desired_height = 600
+    # Calculate center position
+    screen_width = video_win.winfo_screenwidth()
+    screen_height = video_win.winfo_screenheight()
+    x = (screen_width - desired_width) // 2
+    y = (screen_height - desired_height) // 2
+    video_win.geometry(f"{desired_width}x{desired_height}+{x}+{y}")
+    video_win.attributes("-topmost", True)  # Keep it on top
+
+    # Create a frame to host the video
+    video_frame = tk.Frame(video_win)
+    video_frame.pack(fill="both", expand=True)
+    
+    # Create VLC instance and media player for tutorial.mp4
+    instance = vlc.Instance(["--no-xlib", "--quiet", "--quiet-synchro", "--no-video-title-show"])
+    player = instance.media_player_new()
+    media = instance.media_new("tutorial.mp4")
+    player.set_media(media)
+    
+    video_win.update_idletasks()  # Ensure the window is drawn
+    win_id = video_frame.winfo_id()
+    import platform
+    if platform.system() == "Windows":
+        player.set_hwnd(win_id)
+    else:
+        player.set_xwindow(win_id)
+    
+    # Delay starting playback slightly
+    video_win.after(100, player.play)
+    
+    # Define a function for closing the window (manual or skip)
+    def on_close():
+        player.stop()
+        video_win.destroy()
+        pygame.mixer.music.play(-1)  # Resume background music
+    video_win.protocol("WM_DELETE_WINDOW", on_close)
+    
+    # Bind key events: if the user presses any key, ask if they want to skip
+    def on_key(event):
+        answer = sound_askyesno("Skip Tutorial", "Do you want to skip the tutorial?", parent=video_win)
+        if answer:
+            on_close()
+        else:
+            video_win.lift()  # Bring window back to front
+        return "break"  # Prevent further handling
+    video_win.bind("<Key>", on_key)
+    
+    # Check periodically if the video has ended
+    def check_video():
+        state = player.get_state()
+        if state in [vlc.State.Ended, vlc.State.Stopped]:
+            on_close()
+        else:
+            video_win.after(1000, check_video)
+    check_video()
+
+
+
+
+
 # --- Splash screen and transition to player entry screen ---
 def showPlayerEntry():
     splash.destroy()
@@ -324,16 +420,19 @@ splash = tk.Tk()
 splash.title("Splash Screen")
 splash.geometry("600x400")
 splash.configure(bg="black")
-splash_width = 600
-splash_height = 400
-max_logo_width = int(splash_width * 0.8)
-max_logo_height = int(splash_height * 0.8)
+
+# Open and maximize the logo to fill the splash screen (600x400)
+from PIL import Image  # Already imported above
 logo_image = Image.open("logo.jpg")
-logo_image = logo_image.resize((max_logo_width, max_logo_height), Image.Resampling.LANCZOS)
+logo_image = logo_image.resize((600, 400), Image.Resampling.LANCZOS)
 logo = ImageTk.PhotoImage(logo_image)
-tk.Label(splash, image=logo, bg="black").pack(expand=True)
+
+# Pack the logo Label to fill the splash window
+tk.Label(splash, image=logo, bg="black").pack(expand=True, fill="both")
+
 splash.after(4000, showPlayerEntry)
 splash.mainloop()
+
 
 # --- End Splash; now create the main application window ---
 def minimize_window():
@@ -405,6 +504,8 @@ root = tk.Tk()
 root.title("Player Entry Terminal")
 root.geometry("900x600")
 root.attributes('-fullscreen', True)
+# Bind our keys – note we now also bind F1 for the tutorial
+root.bind("<F1>", with_sound(play_tutorial))
 root.bind("<F3>", with_sound(start_game))
 root.bind("<F4>", with_sound(update_player_ui))
 root.bind("<F6>", with_sound(delete_player_ui))
@@ -417,12 +518,24 @@ try:
     bg_image = PhotoImage(file=image_path)
     canvas = tk.Canvas(root, width=root.winfo_screenwidth(), height=root.winfo_screenheight())
     canvas.pack(fill="both", expand=True)
-    canvas.create_image(root.winfo_screenwidth() // 2,
-                        root.winfo_screenheight() // 2,
+    canvas.create_image(root.winfo_screenwidth() // 2, 
+                        root.winfo_screenheight() // 2, 
                         image=bg_image, anchor="center")
 except Exception as e:
     print("Background image not found, using default background.")
     root.configure(bg="black")
+
+# Place logo image centered between the team rosters
+try:
+    logo_img = Image.open("logo.jpg")
+    # Resize the logo to your desired dimensions
+    logo_img = logo_img.resize((200, 150), Image.Resampling.LANCZOS)
+    logo_img = ImageTk.PhotoImage(logo_img)
+    logo_label = tk.Label(root, image=logo_img, bg="black")
+    # Place the logo at the center; adjust the relx, rely values as needed
+    logo_label.place(relx=0.5, rely=0.3, anchor="center")
+except Exception as e:
+    print("Logo image error:", e)
 
 red_frame = tk.Frame(root, bg="darkred", padx=10, pady=10)
 red_frame.place(relx=0.25, rely=0.3, anchor="center")
@@ -456,6 +569,7 @@ button_frame = tk.Frame(root, bg="black")
 button_frame.place(relx=0.5, rely=0.85, anchor="center")
 
 buttons = [
+    ("F1 Play Tutorial", "F1"),
     ("F3 Start Game", "F3"),
     ("F4 Update Player", "F4"),
     ("F6 Delete Player", "F6"),
@@ -465,6 +579,7 @@ buttons = [
 ]
 
 key_action_map = {
+    "F1": play_tutorial,
     "F3": start_game,
     "F4": update_player_ui,
     "F6": delete_player_ui,
@@ -480,5 +595,6 @@ for i, (text, key) in enumerate(buttons):
         action_command = lambda text=text: print(f'Button {text} clicked!')
     tk.Button(button_frame, text=text, font=("Arial", 10), width=15,
               bg="gray", fg="white", command=action_command).grid(row=0, column=i, padx=5, pady=5)
+
 
 root.mainloop()
