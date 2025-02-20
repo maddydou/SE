@@ -111,7 +111,7 @@ def update_player_ui(event=None):
     else:
         messagebox.showwarning("Invalid Input", "Please enter a valid numeric player ID.")
 
-# --- New Delete Player Functions ---
+# --- Optional Delete Player Functions ---
 def delete_player(player_id):
     """Delete the player with the given ID from the database."""
     try:
@@ -152,7 +152,6 @@ def delete_player_ui(event=None):
             messagebox.showwarning("Not Found", "Player not found in database.")
     else:
         messagebox.showwarning("Invalid Input", "Please enter a valid numeric player ID.")
-# --- End Delete Player Functions ---
 
 # Function to prompt for equipment id and send it via UDP
 def prompt_equipment_id(player_id):
@@ -242,7 +241,6 @@ def view_all_players(event=None):
     else:
         text_area.insert(tk.END, "No players found in the database.")
     text_area.config(state=tk.DISABLED)
-# --- End of View All Players ---
 
 # --- Splash screen and transition to player entry screen ---
 def showPlayerEntry():
@@ -332,8 +330,8 @@ def start_game(event=None):
         messagebox.showwarning("Incomplete Team", "Each team must have at least one player before starting the game.")
         return
 
-    # Fade out the background music over 2 seconds only if team validation passes
-    pygame.mixer.music.fadeout(2000)
+    # Fade out the background music over 5 seconds only if team validation passes
+    pygame.mixer.music.fadeout(5000)
     
     # Retrieve players for each team
     red_players = [(eid.get().strip(), ename.get().strip()) 
