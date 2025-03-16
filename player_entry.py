@@ -475,7 +475,7 @@ def start_game(event=None):
         tk.Label(green_frame_game, text=f"ID: {pid} - {codename}", bg="darkgreen", fg="white", font=("Arial", 12)).pack(pady=2)
     countdown_label = tk.Label(game_window, text="", font=("Arial", 24))
     countdown_label.pack(pady=20)
-    countdown_time = 5
+    countdown_time = 30
     def update_countdown():
         nonlocal countdown_time
         if countdown_time > 0:
