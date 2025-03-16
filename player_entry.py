@@ -447,35 +447,55 @@ def close_window():
 
 @with_sound
 def start_game(event=None):
-    """F3: Validate teams, display play action screen with player info and a countdown timer."""
-    print("F3: Starting game!")
-    red_has_player = any(entry_id.get().strip() != "" for idx, (entry_id, _) in enumerate(player_entries) if idx % 2 == 0)
-    green_has_player = any(entry_id.get().strip() != "" for idx, (entry_id, _) in enumerate(player_entries) if idx % 2 == 1)
+    #check if both teams have players entered
+    red_has_player = any(entry_id.get().strip() != "" for entry_id, _ in player_entries[::2])
+    green_has_player = any(entry_id.get().strip() != "" for entry_id, _ in player_entries[1::2])
+
     if not red_has_player or not green_has_player:
-        sound_showwarning("Incomplete Team", "Each team must have at least one player before starting the game.")
+        sound_showwarning("Incomplete Team", "Each team must have at least one player entered!")
         return
-    pygame.mixer.music.fadeout(5000)
-    red_players = [(eid.get().strip(), ename.get().strip())
-                   for idx, (eid, ename) in enumerate(player_entries)
-                   if idx % 2 == 0 and eid.get().strip() != ""]
-    green_players = [(eid.get().strip(), ename.get().strip())
-                     for idx, (eid, ename) in enumerate(player_entries)
-                     if idx % 2 == 1 and eid.get().strip() != ""]
+
+    #extract players from entries
+    red_players = [
+        (entry_id.get().strip(), entry_name.get().strip())
+        for entry_id, entry_name in player_entries[::2]
+        if entry_id.get().strip()
+    ]
+
+    green_players = [
+        (entry_id.get().strip(), entry_name.get().strip())
+        for entry_id, entry_name in player_entries[1::2]
+        if entry_id.get().strip()
+    ]
+
+    #create new game window
     game_window = tk.Toplevel(root)
-    game_window.title("Play Action Screen")
-    red_frame_game = tk.Frame(game_window, bg="darkred", padx=10, pady=10)
-    red_frame_game.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    green_frame_game = tk.Frame(game_window, bg="darkgreen", padx=10, pady=10)
-    green_frame_game.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-    tk.Label(red_frame_game, text="RED TEAM", bg="darkred", fg="white", font=("Arial", 14, "bold")).pack(pady=5)
+    game_window.title("Game Play Window")
+    game_window.geometry("800x600")
+    game_window.configure(bg="black")
+
+    #setup team frames
+    red_frame = tk.Frame(game_window, bg="darkred", padx=10, pady=10)
+    red_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    green_frame = tk.Frame(game_window, bg="darkgreen", padx=10, pady=10)
+    green_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+    #populate Red team
+    tk.Label(red_frame, text="RED TEAM", bg="darkred", fg="white", font=("Arial", 16, "bold")).pack(pady=5)
     for pid, codename in red_players:
-        tk.Label(red_frame_game, text=f"ID: {pid} - {codename}", bg="darkred", fg="white", font=("Arial", 12)).pack(pady=2)
-    tk.Label(green_frame_game, text="GREEN TEAM", bg="darkgreen", fg="white", font=("Arial", 14, "bold")).pack(pady=5)
+        tk.Label(red_frame, text=f"ID: {pid} - {codename}", bg="darkred", fg="white", font=("Arial", 14)).pack(pady=2)
+
+    #populate Green team
+    tk.Label(green_frame, text="GREEN TEAM", bg="darkgreen", fg="white", font=("Arial", 16, "bold")).pack(pady=5)
     for pid, codename in green_players:
-        tk.Label(green_frame_game, text=f"ID: {pid} - {codename}", bg="darkgreen", fg="white", font=("Arial", 12)).pack(pady=2)
-    countdown_label = tk.Label(game_window, text="", font=("Arial", 24))
+        tk.Label(green_frame, text=f"ID: {pid} - {codename}", bg="darkgreen", fg="white", font=("Arial", 14)).pack(pady=2)
+
+    #countdown before game start
+    countdown_label = tk.Label(game_window, text="Game starts in 3...", fg="white", bg="black", font=("Arial", 14))
     countdown_label.pack(pady=20)
-    countdown_time = 30
+    countdown_time = 3
+
     def update_countdown():
         nonlocal countdown_time
         if countdown_time > 0:
@@ -484,7 +504,10 @@ def start_game(event=None):
             game_window.after(1000, update_countdown)
         else:
             countdown_label.config(text="Game Started!")
+
     update_countdown()
+
+
 
 @with_sound
 def clear_fields(event=None):
