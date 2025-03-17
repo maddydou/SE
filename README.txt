@@ -14,6 +14,8 @@ Built with
    Tkinter	(https://docs.python.org/3/library/tkinter.html)
    psycopg2	(https://www.psycopg.org/docs/)
    Pillow	(https://github.com/python-pillow/Pillow)
+   pygame       (https://www.pygame.org/)
+   python-vlc   (https://pypi.org/project/python-vlc/)
 
 Features
 	Player Input Screen:
@@ -46,6 +48,8 @@ Requirements
 	Pillow: For image handling
 	Psycopg2: PostgreSQL adapter for Python.
 	PostgreSQL
+        Pygame: For music handling
+	Python-vlc: For video handling
 
 Installation
 	1: Clone the repo
@@ -56,9 +60,14 @@ Installation
 
 	3: Ensure dependencies are installed
 		pip install psycopg2-binary Pillow
+		pip install pygame
+		pip install python-vlc
 
 	4: Tkinter is usually bundled with Python 3 installations, but on certain operating systems, notably Debian-based systems (Ubuntu, Arch, Fedora, SUSE), you may need to install this component separately with:
 		sudo apt-get install python3-tk
+
+	5: For additional VLC support, make sure that the VLC media player (and its libraries) is installed on your system. On Ubuntu, for example, you might run:
+		sudo apt-get update && sudo apt-get install vlc libvlc-dev
 
 
 -----
