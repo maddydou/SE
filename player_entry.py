@@ -6,11 +6,20 @@ import os
 from functools import partial  # Fix lambda scope issues
 import pygame  # For music playback
 import vlc     # For video playback
+import subprocess   # For running the udpclient and udpserver as well
+import time
+import socket  # For connecting with the client
 
 instance = vlc.Instance(["--no-xlib", "--quiet", "--quiet-synchro", "--no-video-title-show"])
 
 # Import our UDP client module
-from python_udpclient import send_equipment_id
+updserver = subprocess.Popen(["python3","python_udpserver.py"], stdin=subprocess.PIPE)
+udpclient = subprocess.Popen(["python3","python_udpclient.py"], stdin=subprocess.PIPE)
+player_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+player_address = ("127.0.0.1",7501)
+player_socket.bind(player_address)
+player_socket.listen(1)
+connection, client_address = player_socket.accept()
 
 # Initialize pygame mixer and load background music
 pygame.mixer.init()
@@ -447,55 +456,35 @@ def close_window():
 
 @with_sound
 def start_game(event=None):
-    #check if both teams have players entered
-    red_has_player = any(entry_id.get().strip() != "" for entry_id, _ in player_entries[::2])
-    green_has_player = any(entry_id.get().strip() != "" for entry_id, _ in player_entries[1::2])
-
+    """F3: Validate teams, display play action screen with player info and a countdown timer."""
+    print("F3: Starting game!")
+    red_has_player = any(entry_id.get().strip() != "" for idx, (entry_id, _) in enumerate(player_entries) if idx % 2 == 0)
+    green_has_player = any(entry_id.get().strip() != "" for idx, (entry_id, _) in enumerate(player_entries) if idx % 2 == 1)
     if not red_has_player or not green_has_player:
-        sound_showwarning("Incomplete Team", "Each team must have at least one player entered!")
+        sound_showwarning("Incomplete Team", "Each team must have at least one player before starting the game.")
         return
-
-    #extract players from entries
-    red_players = [
-        (entry_id.get().strip(), entry_name.get().strip())
-        for entry_id, entry_name in player_entries[::2]
-        if entry_id.get().strip()
-    ]
-
-    green_players = [
-        (entry_id.get().strip(), entry_name.get().strip())
-        for entry_id, entry_name in player_entries[1::2]
-        if entry_id.get().strip()
-    ]
-
-    #create new game window
+    pygame.mixer.music.fadeout(5000)
+    red_players = [(eid.get().strip(), ename.get().strip())
+                   for idx, (eid, ename) in enumerate(player_entries)
+                   if idx % 2 == 0 and eid.get().strip() != ""]
+    green_players = [(eid.get().strip(), ename.get().strip())
+                     for idx, (eid, ename) in enumerate(player_entries)
+                     if idx % 2 == 1 and eid.get().strip() != ""]
     game_window = tk.Toplevel(root)
-    game_window.title("Game Play Window")
-    game_window.geometry("800x600")
-    game_window.configure(bg="black")
-
-    #setup team frames
-    red_frame = tk.Frame(game_window, bg="darkred", padx=10, pady=10)
-    red_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-    green_frame = tk.Frame(game_window, bg="darkgreen", padx=10, pady=10)
-    green_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-
-    #populate Red team
-    tk.Label(red_frame, text="RED TEAM", bg="darkred", fg="white", font=("Arial", 16, "bold")).pack(pady=5)
+    game_window.title("Play Action Screen")
+    red_frame_game = tk.Frame(game_window, bg="darkred", padx=10, pady=10)
+    red_frame_game.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    green_frame_game = tk.Frame(game_window, bg="darkgreen", padx=10, pady=10)
+    green_frame_game.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+    tk.Label(red_frame_game, text="RED TEAM", bg="darkred", fg="white", font=("Arial", 14, "bold")).pack(pady=5)
     for pid, codename in red_players:
-        tk.Label(red_frame, text=f"ID: {pid} - {codename}", bg="darkred", fg="white", font=("Arial", 14)).pack(pady=2)
-
-    #populate Green team
-    tk.Label(green_frame, text="GREEN TEAM", bg="darkgreen", fg="white", font=("Arial", 16, "bold")).pack(pady=5)
+        tk.Label(red_frame_game, text=f"ID: {pid} - {codename}", bg="darkred", fg="white", font=("Arial", 12)).pack(pady=2)
+    tk.Label(green_frame_game, text="GREEN TEAM", bg="darkgreen", fg="white", font=("Arial", 14, "bold")).pack(pady=5)
     for pid, codename in green_players:
-        tk.Label(green_frame, text=f"ID: {pid} - {codename}", bg="darkgreen", fg="white", font=("Arial", 14)).pack(pady=2)
-
-    #countdown before game start
-    countdown_label = tk.Label(game_window, text="Game starts in 3...", fg="white", bg="black", font=("Arial", 14))
+        tk.Label(green_frame_game, text=f"ID: {pid} - {codename}", bg="darkgreen", fg="white", font=("Arial", 12)).pack(pady=2)
+    countdown_label = tk.Label(game_window, text="", font=("Arial", 24))
     countdown_label.pack(pady=20)
-    countdown_time = 3
-
+    countdown_time = 5
     def update_countdown():
         nonlocal countdown_time
         if countdown_time > 0:
@@ -504,10 +493,7 @@ def start_game(event=None):
             game_window.after(1000, update_countdown)
         else:
             countdown_label.config(text="Game Started!")
-
     update_countdown()
-
-
 
 @with_sound
 def clear_fields(event=None):
@@ -521,7 +507,30 @@ def clear_fields(event=None):
 def quit_game(event=None):
     """F7: Quit the game."""
     print("F7: Quitting game!")
+    connection.sendall(str.encode("221")) # Send the kill command to the udpclient
+    connection.close()
+    player_socket.close()
     root.destroy()
+
+@with_sound
+def change_network(event=None):
+	"""F8: Change network."""
+	print("F8: Changing network!")
+	
+	network_input = tk.simpledialog.askstring("New Network","Please enter the new network: ")
+	
+	if network_input == "":
+		network_input = None
+	# make able to send information to the subprocess
+	if network_input is not None:
+		connection.sendall(str.encode("222"))
+		time.sleep(0.05)
+		connection.sendall(str.encode(network_input))
+		player_address = (network_input, 7501)
+		print("Network changed to {}!".format(network_input))
+	else:
+		print("Network change cancelled!")
+		
 
 root = tk.Tk()
 root.title("Player Entry Terminal")
@@ -597,6 +606,7 @@ buttons = [
     ("F4 Update Player", "F4"),
     ("F6 Delete Player", "F6"),
     ("F7 Quit Game", "F7"),
+    ("F8 Change Network", "F8"),
     ("F9 View All Players", "F9"),
     ("F12 Clear Game", "F12")
 ]
@@ -608,7 +618,8 @@ key_action_map = {
     "F6": delete_player_ui,
     "F9": view_all_players,
     "F12": clear_fields,
-    "F7": quit_game
+    "F7": quit_game,
+    "F8": change_network
 }
 
 for i, (text, key) in enumerate(buttons):
