@@ -9,6 +9,9 @@ import vlc     # For video playback
 import subprocess   # For running the udpclient and udpserver as well
 import time
 import socket  # For connecting with the client
+from python_udpclient import send_equipment_id
+
+
 
 instance = vlc.Instance(["--no-xlib", "--quiet", "--quiet-synchro", "--no-video-title-show"])
 
@@ -484,7 +487,7 @@ def start_game(event=None):
         tk.Label(green_frame_game, text=f"ID: {pid} - {codename}", bg="darkgreen", fg="white", font=("Arial", 12)).pack(pady=2)
     countdown_label = tk.Label(game_window, text="", font=("Arial", 24))
     countdown_label.pack(pady=20)
-    countdown_time = 5
+    countdown_time = 30
     def update_countdown():
         nonlocal countdown_time
         if countdown_time > 0:
