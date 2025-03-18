@@ -77,7 +77,7 @@ Player Entry Interface
 	Run the main application
 		python3 player_entry.py
 
-UDP Communication
+UDP Communication (These processes should start automatically when running player_entry.py)
 	Open two separate terminal windows
 	Start UDP Server in one window
 		python3 python_udpserver.py
@@ -86,6 +86,8 @@ UDP Communication
 		python3 python_udpclient.py
 
 	Follow the prompts in the UDP client to send equipment codes or control to the program.
+
+	If the processes are opened by player_entry.py and the entry screen process terminates, the user may need to manually terminate the UDP processes.
 
 Database
 	Create a database named photon with a table called players having at least the following columns:
