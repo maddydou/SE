@@ -10,6 +10,29 @@ import subprocess   # For running the udpclient and udpserver as well
 import time
 import socket  # For connecting with the client
 from python_udpclient import send_equipment_id
+import random
+
+#initializes pygame mixer
+pygame.mixer.init()
+
+#list of music tracks 
+music_tracks = [
+    "Incoming.mp3",
+    "button.mp3",
+    "newSoundTrackGameplay.mp3"
+]
+
+#function to play random music
+def play_random_music():
+    track = random.choice(music_tracks)  #select a track at random
+    try:
+        pygame.mixer.music.load(track)
+        pygame.mixer.music.play(-1)  #play the music indefinitely
+    except Exception as e:
+        print(f"Error loading music: {e}")
+
+#call this at some point
+play_random_music()
 
 
 
