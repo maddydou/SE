@@ -115,7 +115,7 @@ Contributors - Name (GitHub Username)
 	Adam Montano	(adam4475)
 	Zebulun Jenkins	(zubEjankins)
 	Madison Dou	(maddydou)
-	Chase Haskell	(chase-Haskell)
+	Chase Haskell	(chase-haskell)
 	Joey Leder	(JoeyLeder)
 
 
