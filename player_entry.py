@@ -538,25 +538,68 @@ def quit_game(event=None):
     player_socket.close()
     root.destroy()
 
+# @with_sound
+# def change_network(event=None):
+# 	"""F8: Change network."""
+# 	print("F8: Changing network!")
+	
+# 	network_input = tk.simpledialog.askstring("New Network","Please enter the new network: ")
+	
+# 	if network_input == "":
+# 		network_input = None
+# 	# make able to send information to the subprocess
+# 	if network_input is not None:
+# 		connection.sendall(str.encode("222"))
+# 		time.sleep(0.05)
+# 		connection.sendall(str.encode(network_input))
+# 		player_address = (network_input, 7501)
+# 		print("Network changed to {}!".format(network_input))
+# 	else:
+# 		print("Network change cancelled!")
+
+
 @with_sound
 def change_network(event=None):
-	"""F8: Change network."""
-	print("F8: Changing network!")
-	
-	network_input = tk.simpledialog.askstring("New Network","Please enter the new network: ")
-	
-	if network_input == "":
-		network_input = None
-	# make able to send information to the subprocess
-	if network_input is not None:
-		connection.sendall(str.encode("222"))
-		time.sleep(0.05)
-		connection.sendall(str.encode(network_input))
-		player_address = (network_input, 7501)
-		print("Network changed to {}!".format(network_input))
-	else:
-		print("Network change cancelled!")
-		
+    """F8: Change network. Requires a valid PIN read from a file."""
+    print("F8: Changing network!")
+    
+    # Step 1: Read expected PIN from file "network_pin.txt"
+    try:
+        with open("network_pin.txt", "r") as pin_file:
+            expected_pin = pin_file.read().strip()
+    except Exception as e:
+        sound_showerror("PIN Error", f"Could not read network PIN file:\n{e}")
+        return
+
+    # Step 2: Prompt user for the PIN
+    input_pin = tk.simpledialog.askstring("PIN Required", "Enter the network change PIN:")
+    if input_pin is None or input_pin.strip() == "":
+        sound_showwarning("PIN Required", "You must enter a PIN to proceed.")
+        return
+
+    # Step 3: Compare the entered PIN with the expected PIN
+    if input_pin.strip() != expected_pin:
+        sound_showerror("Invalid PIN", "The PIN you entered is incorrect.")
+        return  # Abort further processing if the PIN is wrong
+
+    # Step 4: If the PIN is correct, proceed to ask for the new network address
+    network_input = tk.simpledialog.askstring("New Network", "Please enter the new network:")
+    
+    if network_input is None or network_input.strip() == "":
+        print("Network change cancelled!")
+        return
+
+    # Send the network change command over the established connection
+    try:
+        connection.sendall(str.encode("222"))
+        time.sleep(0.05)
+        connection.sendall(str.encode(network_input.strip()))
+        # Update the local representation of the address
+        player_address = (network_input.strip(), 7501)
+        print(f"Network changed to {network_input.strip()}!")
+    except Exception as e:
+        sound_showerror("Network Error", f"Failed to change network:\n{e}")
+
 
 root = tk.Tk()
 root.title("Player Entry Terminal")
