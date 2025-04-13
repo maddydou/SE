@@ -27,7 +27,7 @@ Features
 		F3: Validates that each team has at least one player and then moves to the play action screen.
 		F12: Clears all player input fields.
 		F7: Quits the game interface.
-		F8: Prompts the user for a network PIN to change the Network Settings. PIN is defined in /network_pin.txt
+		F8: Prompts the user for a network PIN to change the Network Settings. PIN is defined in /network_pin.txt (default value is 2424)
 	
 	Play Action Screen:
 		Opens as a new window when F3 is pressed (provided that both teams have at least one player).
