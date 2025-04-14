@@ -19,20 +19,20 @@ pygame.mixer.init()
 music_tracks = [
     "Incoming.mp3",
     "button.mp3",
-    "newSoundTrackGameplay.mp3"
+    #"newSoundTrackGameplay.mp3"
 ]
 
 #function to play random music
-def play_random_music():
-    track = random.choice(music_tracks)  #select a track at random
-    try:
-        pygame.mixer.music.load(track)
-        pygame.mixer.music.play(-1)  #play the music indefinitely
-    except Exception as e:
-        print(f"Error loading music: {e}")
+#def play_random_music():
+    #track = random.choice(music_tracks)  #select a track at random
+    #try:
+      #  pygame.mixer.music.load(track)
+     #   pygame.mixer.music.play(-1)  #play the music indefinitely
+    #except Exception as e:
+      #  print(f"Error loading music: {e}")
 
 #call this at some point
-play_random_music()
+#play_random_music()
 
 
 
@@ -482,44 +482,134 @@ def close_window():
 
 @with_sound
 def start_game(event=None):
-    """F3: Validate teams, display play action screen with player info and a countdown timer."""
     print("F3: Starting game!")
     red_has_player = any(entry_id.get().strip() != "" for idx, (entry_id, _) in enumerate(player_entries) if idx % 2 == 0)
     green_has_player = any(entry_id.get().strip() != "" for idx, (entry_id, _) in enumerate(player_entries) if idx % 2 == 1)
     if not red_has_player or not green_has_player:
         sound_showwarning("Incomplete Team", "Each team must have at least one player before starting the game.")
         return
-    pygame.mixer.music.fadeout(5000)
+
+    pygame.mixer.music.fadeout(30000)
+
     red_players = [(eid.get().strip(), ename.get().strip())
                    for idx, (eid, ename) in enumerate(player_entries)
                    if idx % 2 == 0 and eid.get().strip() != ""]
     green_players = [(eid.get().strip(), ename.get().strip())
                      for idx, (eid, ename) in enumerate(player_entries)
                      if idx % 2 == 1 and eid.get().strip() != ""]
+
     game_window = tk.Toplevel(root)
     game_window.title("Play Action Screen")
+
     red_frame_game = tk.Frame(game_window, bg="darkred", padx=10, pady=10)
     red_frame_game.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     green_frame_game = tk.Frame(game_window, bg="darkgreen", padx=10, pady=10)
     green_frame_game.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
     tk.Label(red_frame_game, text="RED TEAM", bg="darkred", fg="white", font=("Arial", 14, "bold")).pack(pady=5)
     for pid, codename in red_players:
         tk.Label(red_frame_game, text=f"ID: {pid} - {codename}", bg="darkred", fg="white", font=("Arial", 12)).pack(pady=2)
+
     tk.Label(green_frame_game, text="GREEN TEAM", bg="darkgreen", fg="white", font=("Arial", 14, "bold")).pack(pady=5)
     for pid, codename in green_players:
         tk.Label(green_frame_game, text=f"ID: {pid} - {codename}", bg="darkgreen", fg="white", font=("Arial", 12)).pack(pady=2)
+
     countdown_label = tk.Label(game_window, text="", font=("Arial", 24))
     countdown_label.pack(pady=20)
+
     countdown_time = 30
+
+    def start_game_flow():
+        # Maximize the play action screen
+        try:
+            game_window.state('zoomed')
+        except Exception:
+            game_window.attributes('-zoomed', True)
+
+        # Stop current music
+        pygame.mixer.music.stop()
+
+        # Start random gameplay track
+        track_list = [f"Track0{i}.mp3" for i in range(1, 9)]
+        first_track = random.choice(track_list)
+        last_track = [first_track]
+
+        try:
+            pygame.mixer.music.load(first_track)
+            pygame.mixer.music.play()
+            print(f"Now playing: {first_track}")
+        except Exception as e:
+            print(f"Error loading {first_track}: {e}")
+
+        # Handle track switching
+        pygame.mixer.music.set_endevent(pygame.USEREVENT + 1)
+
+        def music_loop_handler():
+            root.after(100, music_loop_handler)
+            for event in pygame.event.get():
+                if event.type == pygame.USEREVENT + 1:
+                    next_track = random.choice([t for t in track_list if t != last_track[0]])
+                    try:
+                        pygame.mixer.music.load(next_track)
+                        pygame.mixer.music.play()
+                        print(f"Switched to: {next_track}")
+                        last_track[0] = next_track
+                    except Exception as e:
+                        print(f"Error switching to {next_track}: {e}")
+
+        music_loop_handler()
+
+        # Display "Get ready..." before actual gameplay starts
+        countdown_label.config(text="Get ready...")
+
+        def start_gameplay_timer():
+            nonlocal countdown_label  # ✅ THIS LINE IS CRUCIAL
+
+            gameplay_time = 360
+
+            def update_game_timer():
+                nonlocal gameplay_time, countdown_label  # ✅ AND THIS LINE TOO
+                if gameplay_time > 0:
+                    countdown_label.config(
+                        text=f"Time remaining: {gameplay_time // 60}:{gameplay_time % 60:02d}"
+                    )
+                    gameplay_time -= 1
+                    game_window.after(1000, update_game_timer)
+                else:
+                    pygame.mixer.music.stop()
+                    try:
+                        pygame.mixer.music.load("Incoming.mp3")
+                        pygame.mixer.music.play(-1)
+                        print("Resuming main menu music")
+                    except Exception as e:
+                        print("Error loading main menu music:", e)
+                    game_window.destroy()
+
+            update_game_timer()
+
+
+        # Delay gameplay start by 16 seconds (for voiceover sync)
+        game_window.after(16000, start_gameplay_timer)
+
     def update_countdown():
         nonlocal countdown_time
         if countdown_time > 0:
             countdown_label.config(text=f"Game starting in {countdown_time}...")
+            countdown_label.update_idletasks()
             countdown_time -= 1
             game_window.after(1000, update_countdown)
         else:
-            countdown_label.config(text="Game Started!")
+            # Just display "Get ready..." and then move into game setup
+            countdown_label.config(text="Get ready...")
+            game_window.after(1000, start_game_flow)
+
     update_countdown()
+
+
+
+
+
+
 
 @with_sound
 def clear_fields(event=None):
@@ -540,22 +630,22 @@ def quit_game(event=None):
 
 # @with_sound
 # def change_network(event=None):
-# 	"""F8: Change network."""
-# 	print("F8: Changing network!")
-	
-# 	network_input = tk.simpledialog.askstring("New Network","Please enter the new network: ")
-	
-# 	if network_input == "":
-# 		network_input = None
-# 	# make able to send information to the subprocess
-# 	if network_input is not None:
-# 		connection.sendall(str.encode("222"))
-# 		time.sleep(0.05)
-# 		connection.sendall(str.encode(network_input))
-# 		player_address = (network_input, 7501)
-# 		print("Network changed to {}!".format(network_input))
-# 	else:
-# 		print("Network change cancelled!")
+#   """F8: Change network."""
+#   print("F8: Changing network!")
+    
+#   network_input = tk.simpledialog.askstring("New Network","Please enter the new network: ")
+    
+#   if network_input == "":
+#       network_input = None
+#   # make able to send information to the subprocess
+#   if network_input is not None:
+#       connection.sendall(str.encode("222"))
+#       time.sleep(0.05)
+#       connection.sendall(str.encode(network_input))
+#       player_address = (network_input, 7501)
+#       print("Network changed to {}!".format(network_input))
+#   else:
+#       print("Network change cancelled!")
 
 
 @with_sound
