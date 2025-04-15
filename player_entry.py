@@ -25,6 +25,9 @@ player_stats = {}
 # 🆕 Map equipment_id -> player_db_id
 equip_to_player = {}  # This is crucial for the new fix
 
+# 🆕 Keep track of blink callback ID so we can cancel it
+blink_job_id = None
+
 # 🎮 UDP socket to SEND control messages to traffic generator on port 7500
 traffic_control_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 traffic_generator_address = ("127.0.0.1", 7500)
@@ -38,7 +41,6 @@ music_tracks = [
 
 instance = vlc.Instance(["--no-xlib", "--quiet", "--quiet-synchro", "--no-video-title-show"])
 
-# We are using UDP only for port 7500/7501, so no python_udpserver.py
 udp_receive_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 udp_receive_socket.bind(("127.0.0.1", 7501))
 print("[DEBUG] Bound UDP socket on 127.0.0.1:7501 for incoming traffic generator messages")
@@ -50,11 +52,15 @@ print("[DEBUG] Bound UDP socket on 127.0.0.1:7501 for incoming traffic generator
 red_team_score_label = None
 green_team_score_label = None
 
-# We'll also do leading team label flashing
 blink_state = False
 
 def blink_leading_team():
-    global blink_state
+    """
+    Toggle label backgrounds to highlight the leading team.
+    We'll store the job ID in blink_job_id so we can cancel later.
+    """
+    global blink_state, blink_job_id
+
     # Recompute red_total vs green_total
     red_total = sum(st["score"] for pid, st in player_stats.items() if st["team"] == "red")
     green_total = sum(st["score"] for pid, st in player_stats.items() if st["team"] == "green")
@@ -74,7 +80,8 @@ def blink_leading_team():
             green_team_score_label.config(bg="darkgreen")
 
     blink_state = not blink_state
-    root.after(500, blink_leading_team)
+    # Store the callback ID so we can cancel later
+    blink_job_id = root.after(500, blink_leading_team)
 
 def reorder_team_labels(team):
     """
@@ -141,23 +148,21 @@ def listen_for_messages():
                 hitter_equip, target_equip = parts
                 event_str = ""
 
-                # 🆕 Translate the hitter equipment -> actual DB ID
+                # Translate the hitter equipment -> actual DB ID
                 hitter_id = equip_to_player.get(hitter_equip)
                 if not hitter_id:
                     print(f"[WARNING] No mapping for equipment {hitter_equip}. Ignoring event.")
                     continue
 
-                # figure out the hitter's name/team if we can
                 hitter_name = player_stats[hitter_id]["codename"] if hitter_id in player_stats else f"Unknown({hitter_id})"
                 hitter_team = player_stats[hitter_id]["team"] if hitter_id in player_stats else None
 
-                # If target is base code or numeric equipment
                 if target_equip in ("43", "53"):
                     # Base hit
                     base_color = "Green" if target_equip == "43" else "Red"
                     event_str = f"{hitter_name} hits {base_color} base!"
 
-                    # Actually award +100 only if correct team hits correct base
+                    # Only award +100 if correct team hits correct base
                     if target_equip == "53":  # Red base
                         if hitter_team == "green":
                             player_stats[hitter_id]["score"] += 100
@@ -174,12 +179,10 @@ def listen_for_messages():
                             update_team_scores()
                             reorder_team_labels(hitter_team)
 
-                    # Transmission logic: we always send the equipment ID of the base code? Actually
-                    # the requirement says if it's a base code we just do normal logic. We'll do it below.
+                    response_id = target_equip
 
-                    response_id = target_equip  # We can keep it or do nothing special
                 else:
-                    # 🆕 normal player vs player => translate the target too
+                    # normal player vs player => translate the target too
                     target_id = equip_to_player.get(target_equip)
                     if not target_id:
                         print(f"[WARNING] No mapping for equipment {target_equip}. Ignoring event.")
@@ -202,23 +205,20 @@ def listen_for_messages():
                     else:
                         event_str = f"{hitter_equip} hits {target_equip} (no mapping found)"
 
-                    # ***Friendly-fire rule for transmissions***
+                    # Friendly-fire rule for transmissions
                     if hitter_team and (target_id in player_stats):
                         target_team = player_stats[target_id]["team"]
                         if hitter_team != target_team:
                             response_id = target_equip
                         else:
-                            # same team => send the hitter's equip id
                             response_id = hitter_equip
                     else:
                         response_id = target_equip
 
-                # Log the event string if we have one
                 if event_str:
                     print(f"[DEBUG] Logging event: {event_str}")
                     add_battle_event(event_str)
 
-                # Actually send the chosen ID back
                 traffic_control_socket.sendto(response_id.encode('utf-8'), traffic_generator_address)
                 print(f"[DEBUG] Sent response back to traffic generator: {response_id}")
 
@@ -421,11 +421,10 @@ def prompt_equipment_id(player_id):
     equip_id = sound_askstring("Equipment ID", f"Enter equipment ID for player {player_id}:")
     if equip_id and equip_id.isdigit():
         try:
-            # Send the equipment ID via UDP
             send_equipment_id(equip_id)
             sound_showinfo("Equipment ID Sent", f"Equipment ID {equip_id} sent to UDP server.")
 
-            # 🆕 Also store the mapping in equip_to_player
+            # Also store the mapping in equip_to_player
             equip_to_player[equip_id] = str(player_id)
 
         except Exception as e:
@@ -646,7 +645,6 @@ def start_game(event=None):
 
     pygame.mixer.music.fadeout(30000)
 
-    # Build the red/green player lists
     red_players = [
         (eid.get().strip(), ename.get().strip())
         for idx, (eid, ename) in enumerate(player_entries)
@@ -716,7 +714,6 @@ def start_game(event=None):
     countdown_label = tk.Label(game_window, text="", font=("Arial", 24))
     countdown_label.pack(pady=20)
 
-    # Scrollable "Play-by-Play" log
     log_frame = tk.Frame(game_window, bg="black")
     log_frame.pack(pady=10)
 
@@ -768,7 +765,7 @@ def start_game(event=None):
         music_loop_handler()
         countdown_label.config(text="Get ready...")
 
-        # Start blinking team label
+        # Start blinking
         blink_leading_team()
 
         def start_gameplay_timer():
@@ -801,7 +798,7 @@ def start_game(event=None):
                     # Notify traffic generator
                     traffic_control_socket.sendto(b"221", traffic_generator_address)
 
-                    # Show final scoreboard, keep the play action screen open behind it
+                    # Show final scoreboard
                     show_final_scoreboard()
 
             update_game_timer()
@@ -950,6 +947,11 @@ def show_final_scoreboard():
             mvw_label.config(text="Winning Team found, but no MVP found?")
 
     def end_game():
+        # 🆕 Cancel blinking job so we don't call config on destroyed labels
+        global blink_job_id
+        if blink_job_id:
+            root.after_cancel(blink_job_id)
+
         scoreboard_win.destroy()
         game_window.destroy()
         root.deiconify()
