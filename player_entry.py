@@ -11,61 +11,105 @@ import time
 import socket  # For connecting with the client
 from python_udpclient import send_equipment_id
 import random
+import threading
 
-#initializes pygame mixer
+# Add this global flag
+stop_listener = False
+
+
+# 🅱️ Keep track of labels to update when a player hits a base
+base_hit_labels = {}
+
+# 🎮 Add UDP socket to send control messages to traffic generator
+traffic_control_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+traffic_generator_address = ("127.0.0.1", 7500)
+
+# Initializes pygame mixer
 pygame.mixer.init()
 
-#list of music tracks 
 music_tracks = [
     "Incoming.mp3",
     "button.mp3",
-    #"newSoundTrackGameplay.mp3"
 ]
-
-#function to play random music
-#def play_random_music():
-    #track = random.choice(music_tracks)  #select a track at random
-    #try:
-      #  pygame.mixer.music.load(track)
-     #   pygame.mixer.music.play(-1)  #play the music indefinitely
-    #except Exception as e:
-      #  print(f"Error loading music: {e}")
-
-#call this at some point
-#play_random_music()
-
-
 
 instance = vlc.Instance(["--no-xlib", "--quiet", "--quiet-synchro", "--no-video-title-show"])
 
-# Import our UDP client module
-updserver = subprocess.Popen(["python3","python_udpserver.py"], stdin=subprocess.PIPE)
-udpclient = subprocess.Popen(["python3","python_udpclient.py"], stdin=subprocess.PIPE)
+# Start server and client subprocesses
+
+# TEMPORARILY DISABLING THIS WHILE USING TRAFFIC GENERATOR
+#updserver = subprocess.Popen(["python3", "python_udpserver.py"], stdin=subprocess.PIPE)
+
+udpclient = subprocess.Popen(["python3", "python_udpclient.py"], stdin=subprocess.PIPE)
+
+# Setup TCP socket for equipment communication
 player_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-player_address = ("127.0.0.1",7501)
+player_address = ("127.0.0.1", 7501)
 player_socket.bind(player_address)
 player_socket.listen(1)
 connection, client_address = player_socket.accept()
+print(f"[DEBUG] Connection accepted from {client_address}")
 
-# Initialize pygame mixer and load background music
+# 🧠 Listen for player messages and handle base hits
+def listen_for_messages():
+    global stop_listener
+    while not stop_listener:
+        try:
+            data = connection.recv(1024)
+            if not data:
+                continue
+            message = data.decode().strip()
+            print(f"[UDP] Received message: {message}")
+
+            parts = message.split(":")
+            if len(parts) == 2:
+                hitter_id, target = parts
+
+                # ✅ Echo the entire message back via UDP to unblock traffic generator
+                try:
+                    # Extract just the ID of the player who got hit (the second part of the message)
+                    target_id = message.split(":")[1]
+                    traffic_control_socket.sendto(target_id.encode('utf-8'), traffic_generator_address)
+                    print(f"[DEBUG] Sent response back to traffic generator: {target_id}")
+
+                    print(f"[DEBUG] Echoed to traffic generator: {message}")
+                except Exception as e:
+                    print(f"[ERROR] Failed to echo to traffic generator: {e}")
+
+                # 🅱️ Base hit tracking
+                if target == "43" or target == "53":
+                    if hitter_id in base_hit_labels:
+                        label = base_hit_labels[hitter_id]
+                        current_text = label.cget("text")
+                        if "🅱️" not in current_text:
+                            label.config(text=current_text + " 🅱️", font=("Arial", 12, "bold"))
+                            print(f"[DEBUG] Base hit recorded for player {hitter_id}")
+
+        except Exception as e:
+            if not stop_listener:
+                print(f"[ERROR] Exception in message listener: {e}")
+            break
+
+# Start listening thread
+threading.Thread(target=listen_for_messages, daemon=True).start()
+
+
+# 🎵 Initialize music
 pygame.mixer.init()
 try:
     pygame.mixer.music.load("Incoming.mp3")
 except Exception as e:
     print(f"Error loading music: {e}")
 
-# Check if button.mp3 exists in the current working directory
+# 🔊 Button sound
 if os.path.exists("button.mp3"):
     try:
         button_sound = pygame.mixer.Sound("button.mp3")
-        # Optionally set volume here:
         button_sound.set_volume(1.0)
     except Exception as e:
         print("Error loading button sound:", e)
 else:
     print("button.mp3 not found in:", os.getcwd())
 
-## Define a dedicated channel for button sounds
 button_channel = pygame.mixer.Channel(1)
 button_channel.set_volume(1.0)
 
@@ -508,11 +552,19 @@ def start_game(event=None):
 
     tk.Label(red_frame_game, text="RED TEAM", bg="darkred", fg="white", font=("Arial", 14, "bold")).pack(pady=5)
     for pid, codename in red_players:
-        tk.Label(red_frame_game, text=f"ID: {pid} - {codename}", bg="darkred", fg="white", font=("Arial", 12)).pack(pady=2)
+        player_text = f"ID: {pid} - {codename}"
+        label = tk.Label(red_frame_game, text=player_text, bg="darkred", fg="white", font=("Arial", 12))
+        label.pack(pady=2)
+        base_hit_labels[pid] = label
+
 
     tk.Label(green_frame_game, text="GREEN TEAM", bg="darkgreen", fg="white", font=("Arial", 14, "bold")).pack(pady=5)
     for pid, codename in green_players:
-        tk.Label(green_frame_game, text=f"ID: {pid} - {codename}", bg="darkgreen", fg="white", font=("Arial", 12)).pack(pady=2)
+        player_text = f"ID: {pid} - {codename}"
+        label = tk.Label(green_frame_game, text=player_text, bg="darkgreen", fg="white", font=("Arial", 12))
+        label.pack(pady=2)
+        base_hit_labels[pid] = label
+
 
     countdown_label = tk.Label(game_window, text="", font=("Arial", 24))
     countdown_label.pack(pady=20)
@@ -520,6 +572,7 @@ def start_game(event=None):
     countdown_time = 30
 
     def start_game_flow():
+        print("[DEBUG] start_game_flow() triggered")
         # Maximize the play action screen
         try:
             game_window.state('zoomed')
@@ -541,13 +594,9 @@ def start_game(event=None):
         except Exception as e:
             print(f"Error loading {first_track}: {e}")
 
-        # Handle track switching
-        pygame.mixer.music.set_endevent(pygame.USEREVENT + 1)
-
         def music_loop_handler():
-            root.after(100, music_loop_handler)
-            for event in pygame.event.get():
-                if event.type == pygame.USEREVENT + 1:
+            try:
+                if not pygame.mixer.music.get_busy():
                     next_track = random.choice([t for t in track_list if t != last_track[0]])
                     try:
                         pygame.mixer.music.load(next_track)
@@ -556,26 +605,42 @@ def start_game(event=None):
                         last_track[0] = next_track
                     except Exception as e:
                         print(f"Error switching to {next_track}: {e}")
+            except pygame.error as e:
+                print("Music error:", e)
+
+            root.after(1000, music_loop_handler)  # Check every second
 
         music_loop_handler()
 
-        # Display "Get ready..." before actual gameplay starts
+
+        # Step 1: Show "Get ready..."
         countdown_label.config(text="Get ready...")
 
+        # Step 2: After 16 seconds, start the 6-minute gameplay timer
         def start_gameplay_timer():
-            nonlocal countdown_label  # ✅ THIS LINE IS CRUCIAL
+            print("[DEBUG] start_gameplay_timer() triggered")
 
+            # ✅ Send game start code now that gameplay truly begins
+            try:
+                traffic_control_socket.sendto(b"202", traffic_generator_address)
+                print("[DEBUG] Sent game start signal (202) to traffic generator.")
+            except Exception as e:
+                print(f"[ERROR] Failed to send game start signal: {e}")
+
+            nonlocal countdown_label
             gameplay_time = 360
 
             def update_game_timer():
-                nonlocal gameplay_time, countdown_label  # ✅ AND THIS LINE TOO
+                nonlocal gameplay_time, countdown_label
+                print(f"[DEBUG] Timer running: {gameplay_time} seconds remaining")
+                countdown_label.config(
+                    text=f"Time remaining: {gameplay_time // 60}:{gameplay_time % 60:02d}"
+                )
                 if gameplay_time > 0:
-                    countdown_label.config(
-                        text=f"Time remaining: {gameplay_time // 60}:{gameplay_time % 60:02d}"
-                    )
                     gameplay_time -= 1
                     game_window.after(1000, update_game_timer)
                 else:
+                    # Game over
                     pygame.mixer.music.stop()
                     try:
                         pygame.mixer.music.load("Incoming.mp3")
@@ -587,21 +652,23 @@ def start_game(event=None):
 
             update_game_timer()
 
-
-        # Delay gameplay start by 16 seconds (for voiceover sync)
+        # Delay the game timer by 16 seconds (to match voice cue)
         game_window.after(16000, start_gameplay_timer)
+
+
 
     def update_countdown():
         nonlocal countdown_time
         if countdown_time > 0:
-            countdown_label.config(text=f"Game starting in {countdown_time}...")
+            countdown_label.config(text=f"Map loading in {countdown_time}...")
             countdown_label.update_idletasks()
             countdown_time -= 1
             game_window.after(1000, update_countdown)
-        else:
+        else:     
             # Just display "Get ready..." and then move into game setup
             countdown_label.config(text="Get ready...")
             game_window.after(1000, start_game_flow)
+
 
     update_countdown()
 
@@ -621,12 +688,20 @@ def clear_fields(event=None):
 
 @with_sound
 def quit_game(event=None):
-    """F7: Quit the game."""
+    global stop_listener
     print("F7: Quitting game!")
-    connection.sendall(str.encode("221")) # Send the kill command to the udpclient
-    connection.close()
-    player_socket.close()
+    stop_listener = True  # Stop the listener thread
+    try:
+        connection.sendall(str.encode("221"))
+    except:
+        pass
+    try:
+        connection.close()
+        player_socket.close()
+    except:
+        pass
     root.destroy()
+
 
 # @with_sound
 # def change_network(event=None):
