@@ -13,7 +13,7 @@ from python_udpclient import send_equipment_id
 import random
 import threading
 
-# Add this global flag
+# --- Global flags / data structures ---
 stop_listener = False
 
 # 🅱️ Keep track of labels to update when a player hits a base
@@ -21,6 +21,9 @@ base_hit_labels = {}
 
 # 🗃️ Stats for each player: team, codename, score, base_hits, label
 player_stats = {}
+
+# 🆕 Map equipment_id -> player_db_id
+equip_to_player = {}  # This is crucial for the new fix
 
 # 🎮 UDP socket to SEND control messages to traffic generator on port 7500
 traffic_control_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -35,12 +38,7 @@ music_tracks = [
 
 instance = vlc.Instance(["--no-xlib", "--quiet", "--quiet-synchro", "--no-video-title-show"])
 
-# -- Temporarily disabling python_udpserver.py AND python_udpclient.py
-# since we are using UDP only for port 7500/7501
-#updserver = subprocess.Popen(["python3", "python_udpserver.py"], stdin=subprocess.PIPE)
-#udpclient = subprocess.Popen(["python3", "python_udpclient.py"], stdin=subprocess.PIPE)
-
-# -- Set up a UDP socket for receiving (port 7501)
+# We are using UDP only for port 7500/7501, so no python_udpserver.py
 udp_receive_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 udp_receive_socket.bind(("127.0.0.1", 7501))
 print("[DEBUG] Bound UDP socket on 127.0.0.1:7501 for incoming traffic generator messages")
@@ -76,7 +74,6 @@ def blink_leading_team():
             green_team_score_label.config(bg="darkgreen")
 
     blink_state = not blink_state
-    # schedule next blink in 500ms
     root.after(500, blink_leading_team)
 
 def reorder_team_labels(team):
@@ -85,31 +82,24 @@ def reorder_team_labels(team):
     and re-pack their labels accordingly.
     """
     if team == "red":
-        frame = red_frame_game  # We'll define these frames in start_game
+        frame = red_frame_game
     else:
         frame = green_frame_game
 
-    # Gather the players for this team
     team_players = [(pid, st) for pid, st in player_stats.items() if st["team"] == team]
-    # Sort by descending score
     team_players.sort(key=lambda x: x[1]["score"], reverse=True)
 
-    # We'll skip the first child of the frame (the team's label) by slicing children
-    # e.g. frame.pack_slaves()[1:] if the first widget is the team label
-    # But we need to confirm we haven't assigned those frames globally:
-    # We'll just do a safe approach: remove all children except the first
+    # skip the first child of the frame (the team's label)
     children = frame.pack_slaves()
     if len(children) > 1:
         for widget in children[1:]:
-            widget.forget()  # or .destroy() then re-create if you prefer
+            widget.forget()
 
-    # Re-add them in sorted order
     for pid, stats in team_players:
         label = stats["label"]
-        label.pack(pady=2)  # pack again in new order
+        label.pack(pady=2)
 
 def update_player_label(pid):
-    """Refresh a single player's label to show updated score/base hits."""
     if pid not in player_stats:
         return
     stats = player_stats[pid]
@@ -122,11 +112,9 @@ def update_player_label(pid):
     label.config(text=new_text, font=new_font)
 
 def update_team_scores():
-    """Recalculate total score for each team and update the team labels."""
     global red_team_score_label, green_team_score_label
     red_total = 0
     green_total = 0
-
     for pid, stats in player_stats.items():
         if stats["team"] == "red":
             red_total += stats["score"]
@@ -150,32 +138,35 @@ def listen_for_messages():
 
             parts = message.split(":")
             if len(parts) == 2:
-                hitter_id, target = parts
+                hitter_equip, target_equip = parts
                 event_str = ""
 
-                # Safely fetch hitter stats if they exist
-                if hitter_id in player_stats:
-                    hitter_name = player_stats[hitter_id]["codename"]
-                    hitter_team = player_stats[hitter_id]["team"]
-                else:
-                    hitter_name = f"Unknown({hitter_id})"
-                    hitter_team = None
+                # 🆕 Translate the hitter equipment -> actual DB ID
+                hitter_id = equip_to_player.get(hitter_equip)
+                if not hitter_id:
+                    print(f"[WARNING] No mapping for equipment {hitter_equip}. Ignoring event.")
+                    continue
 
-                if target in ("43", "53"):
+                # figure out the hitter's name/team if we can
+                hitter_name = player_stats[hitter_id]["codename"] if hitter_id in player_stats else f"Unknown({hitter_id})"
+                hitter_team = player_stats[hitter_id]["team"] if hitter_id in player_stats else None
+
+                # If target is base code or numeric equipment
+                if target_equip in ("43", "53"):
                     # Base hit
-                    base_color = "Green" if target == "43" else "Red"
-                    # Build event log first
+                    base_color = "Green" if target_equip == "43" else "Red"
                     event_str = f"{hitter_name} hits {base_color} base!"
 
-                    # Actually award +100 only if correct team hits the correct base
-                    if target == "53":  # Red base
+                    # Actually award +100 only if correct team hits correct base
+                    if target_equip == "53":  # Red base
                         if hitter_team == "green":
                             player_stats[hitter_id]["score"] += 100
                             player_stats[hitter_id]["base_hits"] += 1
                             update_player_label(hitter_id)
                             update_team_scores()
                             reorder_team_labels(hitter_team)
-                    elif target == "43":  # Green base
+
+                    elif target_equip == "43":  # Green base
                         if hitter_team == "red":
                             player_stats[hitter_id]["score"] += 100
                             player_stats[hitter_id]["base_hits"] += 1
@@ -183,11 +174,20 @@ def listen_for_messages():
                             update_team_scores()
                             reorder_team_labels(hitter_team)
 
+                    # Transmission logic: we always send the equipment ID of the base code? Actually
+                    # the requirement says if it's a base code we just do normal logic. We'll do it below.
+
+                    response_id = target_equip  # We can keep it or do nothing special
                 else:
-                    # Normal player ID -> player ID
-                    if hitter_team and (target in player_stats):
-                        target_team = player_stats[target]["team"]
-                        target_name = player_stats[target]["codename"]
+                    # 🆕 normal player vs player => translate the target too
+                    target_id = equip_to_player.get(target_equip)
+                    if not target_id:
+                        print(f"[WARNING] No mapping for equipment {target_equip}. Ignoring event.")
+                        continue
+
+                    if hitter_team and target_id in player_stats:
+                        target_team = player_stats[target_id]["team"]
+                        target_name = player_stats[target_id]["codename"]
 
                         if hitter_team != target_team:
                             player_stats[hitter_id]["score"] += 10
@@ -200,28 +200,25 @@ def listen_for_messages():
                         update_team_scores()
                         reorder_team_labels(hitter_team)
                     else:
-                        # fallback if no stats
-                        event_str = f"{hitter_id} hits {target}"
+                        event_str = f"{hitter_equip} hits {target_equip} (no mapping found)"
+
+                    # ***Friendly-fire rule for transmissions***
+                    if hitter_team and (target_id in player_stats):
+                        target_team = player_stats[target_id]["team"]
+                        if hitter_team != target_team:
+                            response_id = target_equip
+                        else:
+                            # same team => send the hitter's equip id
+                            response_id = hitter_equip
+                    else:
+                        response_id = target_equip
 
                 # Log the event string if we have one
                 if event_str:
                     print(f"[DEBUG] Logging event: {event_str}")
                     add_battle_event(event_str)
 
-                # ***Friendly-fire rule for transmissions***:
-                # If hitter and target are on different teams, we send 'target'
-                # If same team, we send 'hitter_id'
-                if hitter_team and (target in player_stats):
-                    target_team = player_stats[target]["team"]
-                    if hitter_team != target_team:
-                        response_id = target
-                    else:
-                        response_id = hitter_id
-                else:
-                    # If we can't find target in stats, default to target
-                    response_id = target
-
-                # Actually send the chosen ID
+                # Actually send the chosen ID back
                 traffic_control_socket.sendto(response_id.encode('utf-8'), traffic_generator_address)
                 print(f"[DEBUG] Sent response back to traffic generator: {response_id}")
 
@@ -229,7 +226,6 @@ def listen_for_messages():
             if not stop_listener:
                 print(f"[ERROR] Exception in message listener: {e}")
             break
-
 
 threading.Thread(target=listen_for_messages, daemon=True).start()
 
@@ -307,7 +303,6 @@ def add_battle_event(text):
     battle_log.insert(tk.END, text + "\n")
     battle_log.see(tk.END)  # auto-scroll to bottom
     battle_log.config(state="disabled")
-
 
 def get_player_codename(player_id):
     try:
@@ -419,11 +414,20 @@ def delete_player(player_id):
 
 @with_sound
 def prompt_equipment_id(player_id):
+    """
+    Prompts the operator to enter the equipment ID for a given player,
+    then sends the equipment ID via UDP, and stores equip->player mapping.
+    """
     equip_id = sound_askstring("Equipment ID", f"Enter equipment ID for player {player_id}:")
     if equip_id and equip_id.isdigit():
         try:
+            # Send the equipment ID via UDP
             send_equipment_id(equip_id)
             sound_showinfo("Equipment ID Sent", f"Equipment ID {equip_id} sent to UDP server.")
+
+            # 🆕 Also store the mapping in equip_to_player
+            equip_to_player[equip_id] = str(player_id)
+
         except Exception as e:
             sound_showerror("UDP Error", f"Failed to send equipment id: {e}")
     else:
@@ -654,19 +658,16 @@ def start_game(event=None):
         if idx % 2 == 1 and eid.get().strip() != ""
     ]
 
-    # Create the "Play Action" window
     global game_window
     game_window = tk.Toplevel(root)
     game_window.title("Play Action Screen")
 
-    # Create frames for each team
     global red_frame_game, green_frame_game
     red_frame_game = tk.Frame(game_window, bg="darkred", padx=10, pady=10)
     red_frame_game.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     green_frame_game = tk.Frame(game_window, bg="darkgreen", padx=10, pady=10)
     green_frame_game.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-    # Add the "RED TEAM" score label
     global red_team_score_label, green_team_score_label
     red_team_score_label = tk.Label(
         red_frame_game,
@@ -677,7 +678,6 @@ def start_game(event=None):
     )
     red_team_score_label.pack(pady=5)
 
-    # Setup red players
     for pid, codename in red_players:
         player_text = f"ID: {pid} - {codename}"
         label = tk.Label(red_frame_game, text=player_text, bg="darkred", fg="white", font=("Arial", 12))
@@ -691,7 +691,6 @@ def start_game(event=None):
             "label": label
         }
 
-    # Add the "GREEN TEAM" score label
     green_team_score_label = tk.Label(
         green_frame_game,
         text="GREEN TEAM (Score: 0)",
@@ -701,7 +700,6 @@ def start_game(event=None):
     )
     green_team_score_label.pack(pady=5)
 
-    # Setup green players
     for pid, codename in green_players:
         player_text = f"ID: {pid} - {codename}"
         label = tk.Label(green_frame_game, text=player_text, bg="darkgreen", fg="white", font=("Arial", 12))
@@ -730,8 +728,6 @@ def start_game(event=None):
     battle_log.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     log_scroll.config(command=battle_log.yview)
 
-    # We'll define an 'add_battle_event()' if needed, or you might already have it
-
     countdown_time = 30
 
     def start_game_flow():
@@ -741,10 +737,8 @@ def start_game(event=None):
         except Exception:
             game_window.attributes('-zoomed', True)
 
-        # Stop pre-game music
         pygame.mixer.music.stop()
 
-        # Start random gameplay track
         track_list = [f"Track0{i}.mp3" for i in range(1, 9)]
         first_track = random.choice(track_list)
         last_track = [first_track]
@@ -772,7 +766,6 @@ def start_game(event=None):
             root.after(1000, music_loop_handler)
 
         music_loop_handler()
-
         countdown_label.config(text="Get ready...")
 
         # Start blinking team label
@@ -797,7 +790,6 @@ def start_game(event=None):
                     gameplay_time -= 1
                     game_window.after(1000, update_game_timer)
                 else:
-                    # When time hits zero:
                     pygame.mixer.music.stop()
                     try:
                         pygame.mixer.music.load("Incoming.mp3")
@@ -809,18 +801,8 @@ def start_game(event=None):
                     # Notify traffic generator
                     traffic_control_socket.sendto(b"221", traffic_generator_address)
 
-                    # DO NOT destroy the game_window!
-                    # Instead, call show_final_scoreboard()
+                    # Show final scoreboard, keep the play action screen open behind it
                     show_final_scoreboard()
-
-
-                    # Option B: If you prefer to keep the screen, comment above lines, do:
-                    # countdown_label.config(text="Game Over!")
-                    # add a "Return to Entry" button
-                    # def return_to_entry():
-                    #     game_window.destroy()
-                    #     root.deiconify()
-                    # tk.Button(game_window, text="Return to Entry", command=return_to_entry).pack(pady=20)
 
             update_game_timer()
 
@@ -893,7 +875,6 @@ def show_final_scoreboard():
     Keep the Play Action Screen open behind it.
     Provide an 'End Game' button that closes both.
     """
-    # Importantly, attach scoreboard to game_window so it remains above it
     scoreboard_win = tk.Toplevel(game_window)
     scoreboard_win.title("Final Scoreboard")
     scoreboard_win.geometry("800x600")
@@ -904,7 +885,6 @@ def show_final_scoreboard():
         font=("Arial", 16, "bold")
     ).pack(pady=10)
 
-    # 1. Calculate total for red and green.
     red_total = 0
     green_total = 0
     for pid, stats in player_stats.items():
@@ -925,7 +905,6 @@ def show_final_scoreboard():
         font=("Arial", 14)
     ).pack(pady=5)
 
-    # Figure out which team won
     winning_team = None
     if red_total > green_total:
         winning_team = "red"
@@ -944,7 +923,6 @@ def show_final_scoreboard():
         )
     text_area.config(state=tk.DISABLED)
 
-    # “Most Valuable Warrior” from the winning team
     mvw_pid = None
     mvw_value = float("-inf")
 
@@ -971,25 +949,18 @@ def show_final_scoreboard():
         else:
             mvw_label.config(text="Winning Team found, but no MVP found?")
 
-    # A new function to end everything
     def end_game():
-        # 1. close scoreboard
         scoreboard_win.destroy()
-        # 2. close the play action screen
         game_window.destroy()
-        # 3. show main menu again
         root.deiconify()
 
-    # Provide an 'End Game' button to close scoreboard + game_window
     tk.Button(scoreboard_win, text="End Game", font=("Arial", 12, "bold"), command=end_game).pack(pady=15)
-
 
 root = tk.Tk()
 root.title("Player Entry Terminal")
 root.geometry("900x600")
 root.attributes('-fullscreen', True)
 
-# Bind keys
 root.bind("<F1>", with_sound(play_tutorial))
 root.bind("<F3>", with_sound(start_game))
 root.bind("<F4>", with_sound(update_player_ui))
