@@ -24,10 +24,14 @@ Features
 		Use the Tab key to move between input fields.
 
 	Keyboard Shortcuts:
+		F1: Play Tutorial Video
 		F3: Validates that each team has at least one player and then moves to the play action screen.
-		F12: Clears all player input fields.
+		F4: Update Players
+		F6: Delete Player
 		F7: Quits the game interface.
 		F8: Prompts the user for a network PIN to change the Network Settings. PIN is defined in /network_pin.txt (default value is 2424)
+		F9: Displays all players.
+		F12: Clears all player input fields.
 	
 	Play Action Screen:
 		Opens as a new window when F3 is pressed (provided that both teams have at least one player).
