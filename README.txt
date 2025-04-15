@@ -83,7 +83,7 @@ Player Entry Interface (w/ Traffic Generator functionality)
 		python3 python_trafficgenarator_v2.py
 		python3 player_entry.py
 
-***For testing purposes, players 1 and 2 on Red Team were assigned equipment IDs 1 and 2, and the two players on Green Team are IDs 3 and 4 respectively.***
+***For testing purposes, players may be assigned any equipment ID so long as they match from one program to another. If they do not match, program will error and not keep track of scores correctly.***
 
 UDP Communication (These processes should start automatically when running player_entry.py)
 	Open two separate terminal windows
