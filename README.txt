@@ -85,6 +85,8 @@ Player Entry Interface (w/ Traffic Generator functionality)
 
 ***For testing purposes, players may be assigned any equipment ID so long as they match from one program to another. If they do not match, program will error and not keep track of scores correctly.***
 
+ALSO: If you want to run a game one after another, be sure to restart the traffic generator and ensuring equipment IDs are matching before beginning game in player_entry.
+
 UDP Communication (These processes should start automatically when running player_entry.py)
 	Open two separate terminal windows
 	Start UDP Server in one window
