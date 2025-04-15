@@ -6,7 +6,7 @@ import os
 from functools import partial  # Fix lambda scope issues
 import pygame  # For music playback
 import vlc     # For video playback
-import subprocess   # For running the udpclient and udpserver as well
+import subprocess   # For running external scripts if needed
 import time
 import socket  # For connecting with the client
 from python_udpclient import send_equipment_id
@@ -16,11 +16,10 @@ import threading
 # Add this global flag
 stop_listener = False
 
-
 # 🅱️ Keep track of labels to update when a player hits a base
 base_hit_labels = {}
 
-# 🎮 Add UDP socket to send control messages to traffic generator
+# 🎮 UDP socket to SEND control messages to traffic generator on port 7500
 traffic_control_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 traffic_generator_address = ("127.0.0.1", 7500)
 
@@ -34,55 +33,51 @@ music_tracks = [
 
 instance = vlc.Instance(["--no-xlib", "--quiet", "--quiet-synchro", "--no-video-title-show"])
 
-# Start server and client subprocesses
-
-# TEMPORARILY DISABLING THIS WHILE USING TRAFFIC GENERATOR
+# ------------------------------------------------------
+# TEMPORARILY DISABLING python_udpserver.py AND python_udpclient.py
+# since we are using UDP only for port 7500/7501
+# ------------------------------------------------------
 #updserver = subprocess.Popen(["python3", "python_udpserver.py"], stdin=subprocess.PIPE)
+#udpclient = subprocess.Popen(["python3", "python_udpclient.py"], stdin=subprocess.PIPE)
 
-udpclient = subprocess.Popen(["python3", "python_udpclient.py"], stdin=subprocess.PIPE)
-
-# Setup TCP socket for equipment communication
-player_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-player_address = ("127.0.0.1", 7501)
-player_socket.bind(player_address)
-player_socket.listen(1)
-connection, client_address = player_socket.accept()
-print(f"[DEBUG] Connection accepted from {client_address}")
+# ------------------------------------------------------
+# 🏆 SET UP A UDP SOCKET FOR RECEIVING (PORT 7501)
+# ------------------------------------------------------
+udp_receive_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+udp_receive_socket.bind(("127.0.0.1", 7501))
+print("[DEBUG] Bound UDP socket on 127.0.0.1:7501 for incoming traffic generator messages")
 
 # 🧠 Listen for player messages and handle base hits
 def listen_for_messages():
     global stop_listener
     while not stop_listener:
         try:
-            data = connection.recv(1024)
+            data, addr = udp_receive_socket.recvfrom(1024)  # Receive from generator on port 7501
             if not data:
                 continue
             message = data.decode().strip()
-            print(f"[UDP] Received message: {message}")
+            print(f"[UDP] Received message from {addr}: {message}")
 
             parts = message.split(":")
             if len(parts) == 2:
                 hitter_id, target = parts
 
-                # ✅ Echo the entire message back via UDP to unblock traffic generator
-                try:
-                    # Extract just the ID of the player who got hit (the second part of the message)
-                    target_id = message.split(":")[1]
-                    traffic_control_socket.sendto(target_id.encode('utf-8'), traffic_generator_address)
-                    print(f"[DEBUG] Sent response back to traffic generator: {target_id}")
-
-                    print(f"[DEBUG] Echoed to traffic generator: {message}")
-                except Exception as e:
-                    print(f"[ERROR] Failed to echo to traffic generator: {e}")
-
                 # 🅱️ Base hit tracking
-                if target == "43" or target == "53":
+                if target in ("43", "53"):
                     if hitter_id in base_hit_labels:
                         label = base_hit_labels[hitter_id]
                         current_text = label.cget("text")
                         if "🅱️" not in current_text:
                             label.config(text=current_text + " 🅱️", font=("Arial", 12, "bold"))
                             print(f"[DEBUG] Base hit recorded for player {hitter_id}")
+
+                # ✅ Echo the ID of the target to traffic generator so it doesn't hang
+                try:
+                    target_id = target  # or the entire message if needed
+                    traffic_control_socket.sendto(target_id.encode('utf-8'), traffic_generator_address)
+                    print(f"[DEBUG] Sent response back to traffic generator: {target_id}")
+                except Exception as e:
+                    print(f"[ERROR] Failed to echo to traffic generator: {e}")
 
         except Exception as e:
             if not stop_listener:
@@ -91,7 +86,6 @@ def listen_for_messages():
 
 # Start listening thread
 threading.Thread(target=listen_for_messages, daemon=True).start()
-
 
 # 🎵 Initialize music
 pygame.mixer.init()
@@ -371,7 +365,7 @@ def play_tutorial(event=None):
     """F1: Fade out background music, display countdown and then play tutorial.mp4."""
     # Fade out background music over 3 seconds
     pygame.mixer.music.fadeout(3000)
-    
+
     # Create a countdown window and disable its close button
     countdown_win = tk.Toplevel()
     countdown_win.title("Tutorial Loading")
@@ -391,7 +385,6 @@ def play_tutorial(event=None):
             launch_tutorial()
     update_countdown()
 
-
 def launch_tutorial():
     """Launch the tutorial video using VLC in a new window."""
     video_win = tk.Toplevel()
@@ -410,13 +403,13 @@ def launch_tutorial():
     # Create a frame to host the video
     video_frame = tk.Frame(video_win)
     video_frame.pack(fill="both", expand=True)
-    
+
     # Create VLC instance and media player for tutorial.mp4
     instance = vlc.Instance(["--no-xlib", "--quiet", "--quiet-synchro", "--no-video-title-show"])
     player = instance.media_player_new()
     media = instance.media_new("tutorial.mp4")
     player.set_media(media)
-    
+
     video_win.update_idletasks()  # Ensure the window is drawn
     win_id = video_frame.winfo_id()
     import platform
@@ -424,17 +417,17 @@ def launch_tutorial():
         player.set_hwnd(win_id)
     else:
         player.set_xwindow(win_id)
-    
+
     # Delay starting playback slightly
     video_win.after(100, player.play)
-    
+
     # Define a function for closing the window (manual or skip)
     def on_close():
         player.stop()
         video_win.destroy()
         pygame.mixer.music.play(-1)  # Resume background music
     video_win.protocol("WM_DELETE_WINDOW", on_close)
-    
+
     # Bind key events: if the user presses any key, ask if they want to skip
     def on_key(event):
         answer = sound_askyesno("Skip Tutorial", "Do you want to skip the tutorial?", parent=video_win)
@@ -444,7 +437,7 @@ def launch_tutorial():
             video_win.lift()  # Bring window back to front
         return "break"  # Prevent further handling
     video_win.bind("<Key>", on_key)
-    
+
     # Check periodically if the video has ended
     def check_video():
         state = player.get_state()
@@ -453,10 +446,6 @@ def launch_tutorial():
         else:
             video_win.after(1000, check_video)
     check_video()
-
-
-
-
 
 # --- Splash screen and transition to player entry screen ---
 def showPlayerEntry():
@@ -468,7 +457,7 @@ def showPlayerEntry():
     except Exception as e:
         entry_root.attributes('-zoomed', True)
     canvas = tk.Canvas(entry_root, width=entry_root.winfo_screenwidth(),
-                        height=entry_root.winfo_screenheight())
+                       height=entry_root.winfo_screenheight())
     canvas.pack(fill="both", expand=True)
     try:
         bg_path = os.path.join(os.getcwd(), "background.png")
@@ -485,9 +474,9 @@ def showPlayerEntry():
     @with_sound
     def splash_start():
         entry_root.destroy()
-    
+
     frame = tk.Frame(entry_root, bg="", bd=0)
-    tk.Label(frame, text="Welcome Photon Warriors! \nPress START to begin Player Entry!", 
+    tk.Label(frame, text="Welcome Photon Warriors! \nPress START to begin Player Entry!",
              fg="black", font=("Arial", 20)).pack(pady=20)
     tk.Button(frame, text="Start", command=splash_start, font=("Arial", 14)).pack(pady=10)
     canvas.create_window(entry_root.winfo_screenwidth() // 2,
@@ -500,18 +489,15 @@ splash.title("Splash Screen")
 splash.geometry("600x400")
 splash.configure(bg="black")
 
-# Open and maximize the logo to fill the splash screen (600x400)
 from PIL import Image  # Already imported above
 logo_image = Image.open("logo.jpg")
 logo_image = logo_image.resize((600, 400), Image.Resampling.LANCZOS)
 logo = ImageTk.PhotoImage(logo_image)
 
-# Pack the logo Label to fill the splash window
 tk.Label(splash, image=logo, bg="black").pack(expand=True, fill="both")
 
 splash.after(4000, showPlayerEntry)
 splash.mainloop()
-
 
 # --- End Splash; now create the main application window ---
 def minimize_window():
@@ -557,14 +543,12 @@ def start_game(event=None):
         label.pack(pady=2)
         base_hit_labels[pid] = label
 
-
     tk.Label(green_frame_game, text="GREEN TEAM", bg="darkgreen", fg="white", font=("Arial", 14, "bold")).pack(pady=5)
     for pid, codename in green_players:
         player_text = f"ID: {pid} - {codename}"
         label = tk.Label(green_frame_game, text=player_text, bg="darkgreen", fg="white", font=("Arial", 12))
         label.pack(pady=2)
         base_hit_labels[pid] = label
-
 
     countdown_label = tk.Label(game_window, text="", font=("Arial", 24))
     countdown_label.pack(pady=20)
@@ -612,7 +596,6 @@ def start_game(event=None):
 
         music_loop_handler()
 
-
         # Step 1: Show "Get ready..."
         countdown_label.config(text="Get ready...")
 
@@ -655,8 +638,6 @@ def start_game(event=None):
         # Delay the game timer by 16 seconds (to match voice cue)
         game_window.after(16000, start_gameplay_timer)
 
-
-
     def update_countdown():
         nonlocal countdown_time
         if countdown_time > 0:
@@ -664,19 +645,12 @@ def start_game(event=None):
             countdown_label.update_idletasks()
             countdown_time -= 1
             game_window.after(1000, update_countdown)
-        else:     
+        else:
             # Just display "Get ready..." and then move into game setup
             countdown_label.config(text="Get ready...")
             game_window.after(1000, start_game_flow)
 
-
     update_countdown()
-
-
-
-
-
-
 
 @with_sound
 def clear_fields(event=None):
@@ -692,42 +666,22 @@ def quit_game(event=None):
     print("F7: Quitting game!")
     stop_listener = True  # Stop the listener thread
     try:
-        connection.sendall(str.encode("221"))
+        # Optionally broadcast '221' (end) if we want to tell traffic generator
+        for _ in range(3):
+            traffic_control_socket.sendto(b"221", traffic_generator_address)
+            time.sleep(0.01)
     except:
         pass
-    try:
-        connection.close()
-        player_socket.close()
-    except:
-        pass
+
+    # Close our UDP socket
+    udp_receive_socket.close()
     root.destroy()
-
-
-# @with_sound
-# def change_network(event=None):
-#   """F8: Change network."""
-#   print("F8: Changing network!")
-    
-#   network_input = tk.simpledialog.askstring("New Network","Please enter the new network: ")
-    
-#   if network_input == "":
-#       network_input = None
-#   # make able to send information to the subprocess
-#   if network_input is not None:
-#       connection.sendall(str.encode("222"))
-#       time.sleep(0.05)
-#       connection.sendall(str.encode(network_input))
-#       player_address = (network_input, 7501)
-#       print("Network changed to {}!".format(network_input))
-#   else:
-#       print("Network change cancelled!")
-
 
 @with_sound
 def change_network(event=None):
     """F8: Change network. Requires a valid PIN read from a file."""
     print("F8: Changing network!")
-    
+
     # Step 1: Read expected PIN from file "network_pin.txt"
     try:
         with open("network_pin.txt", "r") as pin_file:
@@ -745,31 +699,23 @@ def change_network(event=None):
     # Step 3: Compare the entered PIN with the expected PIN
     if input_pin.strip() != expected_pin:
         sound_showerror("Invalid PIN", "The PIN you entered is incorrect.")
-        return  # Abort further processing if the PIN is wrong
+        return
 
     # Step 4: If the PIN is correct, proceed to ask for the new network address
     network_input = tk.simpledialog.askstring("New Network", "Please enter the new network:")
-    
+
     if network_input is None or network_input.strip() == "":
         print("Network change cancelled!")
         return
 
-    # Send the network change command over the established connection
-    try:
-        connection.sendall(str.encode("222"))
-        time.sleep(0.05)
-        connection.sendall(str.encode(network_input.strip()))
-        # Update the local representation of the address
-        player_address = (network_input.strip(), 7501)
-        print(f"Network changed to {network_input.strip()}!")
-    except Exception as e:
-        sound_showerror("Network Error", f"Failed to change network:\n{e}")
-
+    # Just store this new address for future usage if needed
+    print(f"Network changed to {network_input.strip()}!")
 
 root = tk.Tk()
 root.title("Player Entry Terminal")
 root.geometry("900x600")
 root.attributes('-fullscreen', True)
+
 # Bind our keys – note we now also bind F1 for the tutorial
 root.bind("<F1>", with_sound(play_tutorial))
 root.bind("<F3>", with_sound(start_game))
@@ -784,8 +730,8 @@ try:
     bg_image = PhotoImage(file=image_path)
     canvas = tk.Canvas(root, width=root.winfo_screenwidth(), height=root.winfo_screenheight())
     canvas.pack(fill="both", expand=True)
-    canvas.create_image(root.winfo_screenwidth() // 2, 
-                        root.winfo_screenheight() // 2, 
+    canvas.create_image(root.winfo_screenwidth() // 2,
+                        root.winfo_screenheight() // 2,
                         image=bg_image, anchor="center")
 except Exception as e:
     print("Background image not found, using default background.")
@@ -793,6 +739,7 @@ except Exception as e:
 
 # Place logo image centered between the team rosters
 try:
+    from PIL import Image  # Already imported above
     logo_img = Image.open("logo.jpg")
     # Resize the logo to your desired dimensions
     logo_img = logo_img.resize((200, 150), Image.Resampling.LANCZOS)
@@ -821,7 +768,7 @@ for i in range(15):
     entry_red_id.bind("<Return>", partial(autofill_name, entry_red_id, entry_red_name))
     entry_red_id.bind("<Tab>", partial(autofill_name, entry_red_id, entry_red_name))
     player_entries.append((entry_red_id, entry_red_name))
-    
+
     tk.Label(green_frame, text=f"{i+1}", font=("Arial", 10), bg="darkgreen", fg="white").grid(row=i+1, column=0, padx=5, pady=2)
     entry_green_id = tk.Entry(green_frame, width=5)
     entry_green_id.grid(row=i+1, column=1, padx=5, pady=2)
@@ -863,6 +810,5 @@ for i, (text, key) in enumerate(buttons):
         action_command = lambda text=text: print(f'Button {text} clicked!')
     tk.Button(button_frame, text=text, font=("Arial", 10), width=15,
               bg="gray", fg="white", command=action_command).grid(row=0, column=i, padx=5, pady=5)
-
 
 root.mainloop()
