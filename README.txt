@@ -74,9 +74,12 @@ Installation
 -----
 Usage
 
-Player Entry Interface
-	Run the main application
+Player Entry Interface (w/ Traffic Generator functionality)
+	Run the traffic generator, then the main application:
+		python3 python_trafficgenarator_v2.py
 		python3 player_entry.py
+
+***For testing purposes, players 1 and 2 on Red Team were assigned equipment IDs 1 and 2, and the two players on Green Team are IDs 3 and 4 respectively.***
 
 UDP Communication (These processes should start automatically when running player_entry.py)
 	Open two separate terminal windows
