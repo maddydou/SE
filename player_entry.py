@@ -792,13 +792,12 @@ def start_game(event=None):
             def update_game_timer():
                 nonlocal gameplay_time, countdown_label
                 print(f"[DEBUG] Timer running: {gameplay_time} seconds remaining")
-                countdown_label.config(
-                    text=f"Time remaining: {gameplay_time // 60}:{gameplay_time % 60:02d}"
-                )
+                countdown_label.config(text=f"Time remaining: {gameplay_time // 60}:{gameplay_time % 60:02d}")
                 if gameplay_time > 0:
                     gameplay_time -= 1
                     game_window.after(1000, update_game_timer)
                 else:
+                    # When time hits zero:
                     pygame.mixer.music.stop()
                     try:
                         pygame.mixer.music.load("Incoming.mp3")
@@ -807,12 +806,13 @@ def start_game(event=None):
                     except Exception as e:
                         print("Error loading main menu music:", e)
 
-                    # Let traffic generator know game is done
+                    # Notify traffic generator
                     traffic_control_socket.sendto(b"221", traffic_generator_address)
 
-                    # Option A: Destroy the play action screen, show scoreboard
-                    game_window.destroy()
+                    # DO NOT destroy the game_window!
+                    # Instead, call show_final_scoreboard()
                     show_final_scoreboard()
+
 
                     # Option B: If you prefer to keep the screen, comment above lines, do:
                     # countdown_label.config(text="Game Over!")
@@ -889,11 +889,12 @@ def change_network(event=None):
 
 def show_final_scoreboard():
     """
-    Display the final scoreboard in a new window for 30 seconds,
-    then close it and return to the main menu.
-    MVP is from the winning team only.
+    Display the final scoreboard in a new Toplevel overlay.
+    Keep the Play Action Screen open behind it.
+    Provide an 'End Game' button that closes both.
     """
-    scoreboard_win = tk.Toplevel(root)
+    # Importantly, attach scoreboard to game_window so it remains above it
+    scoreboard_win = tk.Toplevel(game_window)
     scoreboard_win.title("Final Scoreboard")
     scoreboard_win.geometry("800x600")
 
@@ -924,7 +925,7 @@ def show_final_scoreboard():
         font=("Arial", 14)
     ).pack(pady=5)
 
-    # 2. Figure out which team won
+    # Figure out which team won
     winning_team = None
     if red_total > green_total:
         winning_team = "red"
@@ -943,7 +944,7 @@ def show_final_scoreboard():
         )
     text_area.config(state=tk.DISABLED)
 
-    # 4. “Most Valuable Warrior” from the winning team
+    # “Most Valuable Warrior” from the winning team
     mvw_pid = None
     mvw_value = float("-inf")
 
@@ -970,17 +971,18 @@ def show_final_scoreboard():
         else:
             mvw_label.config(text="Winning Team found, but no MVP found?")
 
-    def close_scoreboard():
+    # A new function to end everything
+    def end_game():
+        # 1. close scoreboard
         scoreboard_win.destroy()
-        # Optionally resume menu music
-        # try:
-        #     pygame.mixer.music.load("Incoming.mp3")
-        #     pygame.mixer.music.play(-1)
-        # except Exception as e:
-        #     print("Error loading main menu music:", e)
+        # 2. close the play action screen
+        game_window.destroy()
+        # 3. show main menu again
         root.deiconify()
 
-    scoreboard_win.after(30000, close_scoreboard)
+    # Provide an 'End Game' button to close scoreboard + game_window
+    tk.Button(scoreboard_win, text="End Game", font=("Arial", 12, "bold"), command=end_game).pack(pady=15)
+
 
 root = tk.Tk()
 root.title("Player Entry Terminal")
