@@ -26,7 +26,6 @@ player_stats = {}
 traffic_control_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 traffic_generator_address = ("127.0.0.1", 7500)
 
-# Initializes pygame mixer
 pygame.mixer.init()
 
 music_tracks = [
@@ -36,26 +35,78 @@ music_tracks = [
 
 instance = vlc.Instance(["--no-xlib", "--quiet", "--quiet-synchro", "--no-video-title-show"])
 
-# ------------------------------------------------------
-# TEMPORARILY DISABLING python_udpserver.py AND python_udpclient.py
+# -- Temporarily disabling python_udpserver.py AND python_udpclient.py
 # since we are using UDP only for port 7500/7501
-# ------------------------------------------------------
 #updserver = subprocess.Popen(["python3", "python_udpserver.py"], stdin=subprocess.PIPE)
 #udpclient = subprocess.Popen(["python3", "python_udpclient.py"], stdin=subprocess.PIPE)
 
-# ------------------------------------------------------
-# 🏆 SET UP A UDP SOCKET FOR RECEIVING (PORT 7501)
-# ------------------------------------------------------
+# -- Set up a UDP socket for receiving (port 7501)
 udp_receive_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 udp_receive_socket.bind(("127.0.0.1", 7501))
 print("[DEBUG] Bound UDP socket on 127.0.0.1:7501 for incoming traffic generator messages")
 
-################################################################
-# New: We'll store references to red/green team score labels
-# and call update_team_scores() after any score change
-################################################################
+#########################################################
+# Team score labels (red_team_score_label, green_team_score_label)
+# We'll reorder the players after each score update
+#########################################################
 red_team_score_label = None
 green_team_score_label = None
+
+# We'll also do leading team label flashing
+blink_state = False
+
+def blink_leading_team():
+    global blink_state
+    # Recompute red_total vs green_total
+    red_total = sum(st["score"] for pid, st in player_stats.items() if st["team"] == "red")
+    green_total = sum(st["score"] for pid, st in player_stats.items() if st["team"] == "green")
+
+    if red_team_score_label and green_team_score_label:
+        if red_total > green_total:
+            color = "yellow" if blink_state else "darkred"
+            red_team_score_label.config(bg=color)
+            green_team_score_label.config(bg="darkgreen")
+        elif green_total > red_total:
+            color = "yellow" if blink_state else "darkgreen"
+            green_team_score_label.config(bg=color)
+            red_team_score_label.config(bg="darkred")
+        else:
+            # tie
+            red_team_score_label.config(bg="darkred")
+            green_team_score_label.config(bg="darkgreen")
+
+    blink_state = not blink_state
+    # schedule next blink in 500ms
+    root.after(500, blink_leading_team)
+
+def reorder_team_labels(team):
+    """
+    Sort the players on a team from highest to lowest score,
+    and re-pack their labels accordingly.
+    """
+    if team == "red":
+        frame = red_frame_game  # We'll define these frames in start_game
+    else:
+        frame = green_frame_game
+
+    # Gather the players for this team
+    team_players = [(pid, st) for pid, st in player_stats.items() if st["team"] == team]
+    # Sort by descending score
+    team_players.sort(key=lambda x: x[1]["score"], reverse=True)
+
+    # We'll skip the first child of the frame (the team's label) by slicing children
+    # e.g. frame.pack_slaves()[1:] if the first widget is the team label
+    # But we need to confirm we haven't assigned those frames globally:
+    # We'll just do a safe approach: remove all children except the first
+    children = frame.pack_slaves()
+    if len(children) > 1:
+        for widget in children[1:]:
+            widget.forget()  # or .destroy() then re-create if you prefer
+
+    # Re-add them in sorted order
+    for pid, stats in team_players:
+        label = stats["label"]
+        label.pack(pady=2)  # pack again in new order
 
 def update_player_label(pid):
     """Refresh a single player's label to show updated score/base hits."""
@@ -64,11 +115,9 @@ def update_player_label(pid):
     stats = player_stats[pid]
     label = stats["label"]
 
-    # If base_hits > 0, display "B" and use bold font
     b_symbol = " 🅱️" if stats["base_hits"] > 0 else ""
     new_font = ("Arial", 12, "bold") if stats["base_hits"] > 0 else ("Arial", 12)
 
-    # Show: ID: X - Codename (Score: Y, BH: Z) plus "B" if base_hits > 0
     new_text = f"ID: {pid} - {stats['codename']} (Score: {stats['score']}, BH: {stats['base_hits']}){b_symbol}"
     label.config(text=new_text, font=new_font)
 
@@ -89,7 +138,6 @@ def update_team_scores():
     if green_team_score_label:
         green_team_score_label.config(text=f"GREEN TEAM (Score: {green_total})")
 
-# 🧠 Listen for player messages and handle base hits
 def listen_for_messages():
     global stop_listener
     while not stop_listener:
@@ -103,51 +151,94 @@ def listen_for_messages():
             parts = message.split(":")
             if len(parts) == 2:
                 hitter_id, target = parts
+                event_str = ""
 
-                # If target is '43' or '53', it's a base hit
+                # Safely fetch hitter stats if they exist
+                if hitter_id in player_stats:
+                    hitter_name = player_stats[hitter_id]["codename"]
+                    hitter_team = player_stats[hitter_id]["team"]
+                else:
+                    hitter_name = f"Unknown({hitter_id})"
+                    hitter_team = None
+
                 if target in ("43", "53"):
-                    # +100 points to hitter
-                    if hitter_id in player_stats:
-                        player_stats[hitter_id]["score"] += 100
-                        player_stats[hitter_id]["base_hits"] += 1
-                        update_player_label(hitter_id)
-                        update_team_scores()
+                    # Base hit
+                    base_color = "Green" if target == "43" else "Red"
+                    # Build event log first
+                    event_str = f"{hitter_name} hits {base_color} base!"
+
+                    # Actually award +100 only if correct team hits the correct base
+                    if target == "53":  # Red base
+                        if hitter_team == "green":
+                            player_stats[hitter_id]["score"] += 100
+                            player_stats[hitter_id]["base_hits"] += 1
+                            update_player_label(hitter_id)
+                            update_team_scores()
+                            reorder_team_labels(hitter_team)
+                    elif target == "43":  # Green base
+                        if hitter_team == "red":
+                            player_stats[hitter_id]["score"] += 100
+                            player_stats[hitter_id]["base_hits"] += 1
+                            update_player_label(hitter_id)
+                            update_team_scores()
+                            reorder_team_labels(hitter_team)
+
                 else:
                     # Normal player ID -> player ID
-                    # +10 if teams differ, -10 if same team
-                    if hitter_id in player_stats and target in player_stats:
-                        hitter_team = player_stats[hitter_id]["team"]
+                    if hitter_team and (target in player_stats):
                         target_team = player_stats[target]["team"]
+                        target_name = player_stats[target]["codename"]
+
                         if hitter_team != target_team:
-                            # Different team => +10
                             player_stats[hitter_id]["score"] += 10
+                            event_str = f"{hitter_name} hits enemy {target_name}!"
                         else:
-                            # Same team => -10
                             player_stats[hitter_id]["score"] -= 10
+                            event_str = f"{hitter_name} hits own teammate {target_name}!"
 
                         update_player_label(hitter_id)
                         update_team_scores()
+                        reorder_team_labels(hitter_team)
+                    else:
+                        # fallback if no stats
+                        event_str = f"{hitter_id} hits {target}"
 
-                # Echo response so traffic generator doesn't hang
-                traffic_control_socket.sendto(target.encode('utf-8'), traffic_generator_address)
-                print(f"[DEBUG] Sent response back to traffic generator: {target}")
+                # Log the event string if we have one
+                if event_str:
+                    print(f"[DEBUG] Logging event: {event_str}")
+                    add_battle_event(event_str)
+
+                # ***Friendly-fire rule for transmissions***:
+                # If hitter and target are on different teams, we send 'target'
+                # If same team, we send 'hitter_id'
+                if hitter_team and (target in player_stats):
+                    target_team = player_stats[target]["team"]
+                    if hitter_team != target_team:
+                        response_id = target
+                    else:
+                        response_id = hitter_id
+                else:
+                    # If we can't find target in stats, default to target
+                    response_id = target
+
+                # Actually send the chosen ID
+                traffic_control_socket.sendto(response_id.encode('utf-8'), traffic_generator_address)
+                print(f"[DEBUG] Sent response back to traffic generator: {response_id}")
 
         except Exception as e:
             if not stop_listener:
                 print(f"[ERROR] Exception in message listener: {e}")
             break
 
-# Start listening thread
+
 threading.Thread(target=listen_for_messages, daemon=True).start()
 
-# 🎵 Initialize music
 pygame.mixer.init()
 try:
     pygame.mixer.music.load("Incoming.mp3")
 except Exception as e:
     print(f"Error loading music: {e}")
 
-# 🔊 Button sound
 if os.path.exists("button.mp3"):
     try:
         button_sound = pygame.mixer.Sound("button.mp3")
@@ -169,7 +260,6 @@ def with_sound(fn):
         return fn(*args, **kwargs)
     return wrapper
 
-# --- Custom dialog functions ---
 def sound_askstring(title, prompt):
     try:
         button_channel.play(button_sound)
@@ -205,15 +295,21 @@ def sound_showerror(title, message):
         print("Error playing button sound:", e)
     messagebox.showerror(title, message)
 
-# Database credentials
 DB_NAME = "photon"
 DB_USER = "student"
 DB_PASSWORD = "student"  # Replace with your actual password
 DB_HOST = "localhost"
 DB_PORT = "5432"
 
+def add_battle_event(text):
+    global battle_log
+    battle_log.config(state="normal")
+    battle_log.insert(tk.END, text + "\n")
+    battle_log.see(tk.END)  # auto-scroll to bottom
+    battle_log.config(state="disabled")
+
+
 def get_player_codename(player_id):
-    """Fetch the player's codename from the database based on player ID."""
     try:
         print(f"Connecting to database for player ID: {player_id}")
         conn = psycopg2.connect(
@@ -236,7 +332,6 @@ def get_player_codename(player_id):
         return None
 
 def add_new_player(player_id, codename):
-    """Insert a new player into the database."""
     try:
         conn = psycopg2.connect(
             dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD,
@@ -253,7 +348,6 @@ def add_new_player(player_id, codename):
         return False
 
 def update_player(player_id, new_codename):
-    """Update the player's codename in the database."""
     try:
         conn = psycopg2.connect(
             dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD,
@@ -292,7 +386,6 @@ def delete_player_ui(event=None):
     player_id_str = sound_askstring("Delete Player", "Enter the player ID to delete:")
     if player_id_str and player_id_str.isdigit():
         player_id = int(player_id_str)
-        # Retrieve the current codename to confirm deletion
         codename = get_player_codename(player_id)
         if codename:
             confirm = sound_askyesno("Confirm Deletion", f"Are you sure you want to delete player {player_id} ({codename})?")
@@ -309,7 +402,6 @@ def delete_player_ui(event=None):
         sound_showwarning("Invalid Input", "Please enter a valid numeric player ID.")
 
 def delete_player(player_id):
-    """Delete the player with the given ID from the database."""
     try:
         conn = psycopg2.connect(
             dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD,
@@ -327,10 +419,6 @@ def delete_player(player_id):
 
 @with_sound
 def prompt_equipment_id(player_id):
-    """
-    Prompts the operator to enter the equipment ID for a given player,
-    then sends the equipment ID via UDP.
-    """
     equip_id = sound_askstring("Equipment ID", f"Enter equipment ID for player {player_id}:")
     if equip_id and equip_id.isdigit():
         try:
@@ -345,7 +433,7 @@ def prompt_equipment_id(player_id):
 def autofill_name(entry_id, entry_name, event=None):
     print("Autofill function triggered!")
     player_id = entry_id.get().strip()
-    valid_player = False  # Flag to indicate a valid player exists (found or added)
+    valid_player = False
     if player_id.isdigit():
         print(f"Checking database for player ID: {player_id}")
         codename = get_player_codename(int(player_id))
@@ -366,7 +454,6 @@ def autofill_name(entry_id, entry_name, event=None):
                         valid_player = True
                     else:
                         sound_showerror("Database Error", "Failed to add new player.")
-    # Only prompt for equipment ID if we have a valid player (found or added)
     if event is not None:
         if event.keysym in ("Return", "Tab") and valid_player:
             prompt_equipment_id(player_id)
@@ -375,7 +462,6 @@ def autofill_name(entry_id, entry_name, event=None):
 
 @with_sound
 def view_all_players(event=None):
-    """F9: Retrieve and display all player IDs and codenames."""
     try:
         conn = psycopg2.connect(
             dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD,
@@ -406,12 +492,10 @@ def view_all_players(event=None):
 
 @with_sound
 def play_tutorial(event=None):
-    """F1: Fade out background music, display countdown and then play tutorial.mp4."""
     pygame.mixer.music.fadeout(3000)
-
     countdown_win = tk.Toplevel()
     countdown_win.title("Tutorial Loading")
-    countdown_win.protocol("WM_DELETE_WINDOW", lambda: None)  # Disables the close (X) button
+    countdown_win.protocol("WM_DELETE_WINDOW", lambda: None)
 
     countdown_label = tk.Label(countdown_win, text="Tutorial loading in 3...", font=("Arial", 20))
     countdown_label.pack(padx=20, pady=20)
@@ -428,7 +512,6 @@ def play_tutorial(event=None):
     update_countdown()
 
 def launch_tutorial():
-    """Launch the tutorial video using VLC in a new window."""
     video_win = tk.Toplevel()
     video_win.title("Tutorial")
     desired_width = 800
@@ -520,7 +603,7 @@ splash.title("Splash Screen")
 splash.geometry("600x400")
 splash.configure(bg="black")
 
-from PIL import Image  # Already imported above
+from PIL import Image
 logo_image = Image.open("logo.jpg")
 logo_image = logo_image.resize((600, 400), Image.Resampling.LANCZOS)
 logo = ImageTk.PhotoImage(logo_image)
@@ -543,31 +626,47 @@ def close_window():
 @with_sound
 def start_game(event=None):
     print("F3: Starting game!")
-    red_has_player = any(entry_id.get().strip() != "" for idx, (entry_id, _) in enumerate(player_entries) if idx % 2 == 0)
-    green_has_player = any(entry_id.get().strip() != "" for idx, (entry_id, _) in enumerate(player_entries) if idx % 2 == 1)
+    red_has_player = any(
+        entry_id.get().strip() != ""
+        for idx, (entry_id, _) in enumerate(player_entries)
+        if idx % 2 == 0
+    )
+    green_has_player = any(
+        entry_id.get().strip() != ""
+        for idx, (entry_id, _) in enumerate(player_entries)
+        if idx % 2 == 1
+    )
     if not red_has_player or not green_has_player:
         sound_showwarning("Incomplete Team", "Each team must have at least one player before starting the game.")
         return
 
     pygame.mixer.music.fadeout(30000)
 
-    red_players = [(eid.get().strip(), ename.get().strip())
-                   for idx, (eid, ename) in enumerate(player_entries)
-                   if idx % 2 == 0 and eid.get().strip() != ""]
-    green_players = [(eid.get().strip(), ename.get().strip())
-                     for idx, (eid, ename) in enumerate(player_entries)
-                     if idx % 2 == 1 and eid.get().strip() != ""]
+    # Build the red/green player lists
+    red_players = [
+        (eid.get().strip(), ename.get().strip())
+        for idx, (eid, ename) in enumerate(player_entries)
+        if idx % 2 == 0 and eid.get().strip() != ""
+    ]
+    green_players = [
+        (eid.get().strip(), ename.get().strip())
+        for idx, (eid, ename) in enumerate(player_entries)
+        if idx % 2 == 1 and eid.get().strip() != ""
+    ]
 
+    # Create the "Play Action" window
+    global game_window
     game_window = tk.Toplevel(root)
     game_window.title("Play Action Screen")
 
+    # Create frames for each team
+    global red_frame_game, green_frame_game
     red_frame_game = tk.Frame(game_window, bg="darkred", padx=10, pady=10)
     red_frame_game.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
     green_frame_game = tk.Frame(game_window, bg="darkgreen", padx=10, pady=10)
     green_frame_game.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-    # --------------------
-    # REPLACE THE "RED TEAM" LABEL WITH A SCORE LABEL
+    # Add the "RED TEAM" score label
     global red_team_score_label, green_team_score_label
     red_team_score_label = tk.Label(
         red_frame_game,
@@ -578,13 +677,12 @@ def start_game(event=None):
     )
     red_team_score_label.pack(pady=5)
 
-    # Setup each Red player's label
+    # Setup red players
     for pid, codename in red_players:
         player_text = f"ID: {pid} - {codename}"
         label = tk.Label(red_frame_game, text=player_text, bg="darkred", fg="white", font=("Arial", 12))
         label.pack(pady=2)
         base_hit_labels[pid] = label
-        # 🆕 Add or update player_stats
         player_stats[pid] = {
             "team": "red",
             "codename": codename,
@@ -593,7 +691,7 @@ def start_game(event=None):
             "label": label
         }
 
-    # Similarly, green team label
+    # Add the "GREEN TEAM" score label
     green_team_score_label = tk.Label(
         green_frame_game,
         text="GREEN TEAM (Score: 0)",
@@ -603,6 +701,7 @@ def start_game(event=None):
     )
     green_team_score_label.pack(pady=5)
 
+    # Setup green players
     for pid, codename in green_players:
         player_text = f"ID: {pid} - {codename}"
         label = tk.Label(green_frame_game, text=player_text, bg="darkgreen", fg="white", font=("Arial", 12))
@@ -619,6 +718,20 @@ def start_game(event=None):
     countdown_label = tk.Label(game_window, text="", font=("Arial", 24))
     countdown_label.pack(pady=20)
 
+    # Scrollable "Play-by-Play" log
+    log_frame = tk.Frame(game_window, bg="black")
+    log_frame.pack(pady=10)
+
+    log_scroll = tk.Scrollbar(log_frame)
+    log_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+    global battle_log
+    battle_log = tk.Text(log_frame, width=50, height=6, state="disabled", bg="white", yscrollcommand=log_scroll.set)
+    battle_log.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    log_scroll.config(command=battle_log.yview)
+
+    # We'll define an 'add_battle_event()' if needed, or you might already have it
+
     countdown_time = 30
 
     def start_game_flow():
@@ -628,8 +741,10 @@ def start_game(event=None):
         except Exception:
             game_window.attributes('-zoomed', True)
 
+        # Stop pre-game music
         pygame.mixer.music.stop()
 
+        # Start random gameplay track
         track_list = [f"Track0{i}.mp3" for i in range(1, 9)]
         first_track = random.choice(track_list)
         last_track = [first_track]
@@ -660,6 +775,9 @@ def start_game(event=None):
 
         countdown_label.config(text="Get ready...")
 
+        # Start blinking team label
+        blink_leading_team()
+
         def start_gameplay_timer():
             print("[DEBUG] start_gameplay_timer() triggered")
             try:
@@ -688,11 +806,21 @@ def start_game(event=None):
                         print("Resuming main menu music")
                     except Exception as e:
                         print("Error loading main menu music:", e)
-                        
+
                     # Let traffic generator know game is done
                     traffic_control_socket.sendto(b"221", traffic_generator_address)
+
+                    # Option A: Destroy the play action screen, show scoreboard
                     game_window.destroy()
-                    show_final_scoreboard()  # <--- call our final scoreboard
+                    show_final_scoreboard()
+
+                    # Option B: If you prefer to keep the screen, comment above lines, do:
+                    # countdown_label.config(text="Game Over!")
+                    # add a "Return to Entry" button
+                    # def return_to_entry():
+                    #     game_window.destroy()
+                    #     root.deiconify()
+                    # tk.Button(game_window, text="Return to Entry", command=return_to_entry).pack(pady=20)
 
             update_game_timer()
 
@@ -722,22 +850,19 @@ def clear_fields(event=None):
 def quit_game(event=None):
     global stop_listener
     print("F7: Quitting game!")
-    stop_listener = True  # Stop the listener thread
+    stop_listener = True
     try:
-        # Optionally broadcast '221' (end) if we want to tell traffic generator
         for _ in range(3):
             traffic_control_socket.sendto(b"221", traffic_generator_address)
             time.sleep(0.01)
     except:
         pass
 
-    # Close our UDP socket
     udp_receive_socket.close()
     root.destroy()
 
 @with_sound
 def change_network(event=None):
-    """F8: Change network. Requires a valid PIN read from a file."""
     print("F8: Changing network!")
     try:
         with open("network_pin.txt", "r") as pin_file:
@@ -761,14 +886,13 @@ def change_network(event=None):
         return
 
     print(f"Network changed to {network_input.strip()}!")
-    
+
 def show_final_scoreboard():
     """
     Display the final scoreboard in a new window for 30 seconds,
     then close it and return to the main menu.
     MVP is from the winning team only.
     """
-
     scoreboard_win = tk.Toplevel(root)
     scoreboard_win.title("Final Scoreboard")
     scoreboard_win.geometry("800x600")
@@ -788,7 +912,6 @@ def show_final_scoreboard():
         else:
             green_total += stats["score"]
 
-    # Show each team's final total
     tk.Label(
         scoreboard_win,
         text=f"Red Team Final Score: {red_total}",
@@ -807,11 +930,7 @@ def show_final_scoreboard():
         winning_team = "red"
     elif green_total > red_total:
         winning_team = "green"
-    else:
-        # It's a tie! If you want to handle that differently, do so here
-        winning_team = None
 
-    # 3. Show each player's final data in a text area
     text_area = tk.Text(scoreboard_win, width=40, height=8)
     text_area.pack(pady=5)
 
@@ -831,7 +950,6 @@ def show_final_scoreboard():
     if winning_team:
         for pid, stats in player_stats.items():
             if stats["team"] == winning_team:
-                # Weighted by (score + base_hits), or do just “score” if you prefer
                 value = stats["score"] + stats["base_hits"]
                 if value > mvw_value:
                     mvw_value = value
@@ -852,27 +970,24 @@ def show_final_scoreboard():
         else:
             mvw_label.config(text="Winning Team found, but no MVP found?")
 
-    # 5. Auto-close scoreboard after 30 seconds
     def close_scoreboard():
         scoreboard_win.destroy()
-        # Resume main menu music
-        #try:
-            #pygame.mixer.music.load("Incoming.mp3")
-            #pygame.mixer.music.play(-1)
-        #except Exception as e:
-            #print("Error loading main menu music:", e)
-        # Show main menu again if needed
+        # Optionally resume menu music
+        # try:
+        #     pygame.mixer.music.load("Incoming.mp3")
+        #     pygame.mixer.music.play(-1)
+        # except Exception as e:
+        #     print("Error loading main menu music:", e)
         root.deiconify()
 
     scoreboard_win.after(30000, close_scoreboard)
-   
 
 root = tk.Tk()
 root.title("Player Entry Terminal")
 root.geometry("900x600")
 root.attributes('-fullscreen', True)
 
-# Bind our keys – note we now also bind F1 for the tutorial
+# Bind keys
 root.bind("<F1>", with_sound(play_tutorial))
 root.bind("<F3>", with_sound(start_game))
 root.bind("<F4>", with_sound(update_player_ui))
@@ -894,7 +1009,7 @@ except Exception as e:
     root.configure(bg="black")
 
 try:
-    from PIL import Image  # Already imported above
+    from PIL import Image
     logo_img = Image.open("logo.jpg")
     logo_img = logo_img.resize((200, 150), Image.Resampling.LANCZOS)
     logo_img = ImageTk.PhotoImage(logo_img)
